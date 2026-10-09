@@ -1,8 +1,9 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #09090b;
+  --foreground: #e4e4e7;
+  color-scheme: dark;
 }
 
 @theme inline {
@@ -12,15 +13,81 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+}
+
+/* Range slider used throughout the adjustment panels. */
+.slider {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 16px;
+  margin: 0;
+  background: transparent;
+  cursor: pointer;
+  touch-action: none;
+}
+.slider:focus {
+  outline: none;
+}
+.slider::-webkit-slider-runnable-track {
+  height: 16px;
+  background: transparent;
+}
+.slider::-moz-range-track {
+  height: 16px;
+  background: transparent;
+}
+.slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  margin-top: 2px;
+  border-radius: 9999px;
+  background: #e4e4e7;
+  border: 1px solid #09090b;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.15);
+  transition: transform 0.1s ease;
+}
+.slider::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border-radius: 9999px;
+  background: #e4e4e7;
+  border: 1px solid #09090b;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.15);
+}
+.slider:hover::-webkit-slider-thumb,
+.slider:focus-visible::-webkit-slider-thumb {
+  transform: scale(1.15);
+  background: #ffffff;
+}
+.slider:focus-visible::-moz-range-thumb {
+  background: #ffffff;
+}
+
+/* Hide number input spinners in the slider value fields. */
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+/* Subtle scrollbars for the side panel. */
+aside::-webkit-scrollbar {
+  width: 8px;
+}
+aside::-webkit-scrollbar-thumb {
+  background: #27272a;
+  border-radius: 9999px;
+}
+aside::-webkit-scrollbar-thumb:hover {
+  background: #3f3f46;
 }

@@ -1,0 +1,351 @@
+"use client";
+
+import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  type Adjustments,
+  applyPreset,
+  createDefaultAdjustments,
+  isDefault,
+} from "@/lib/adjustments";
+import {
+  isXmpFile,
+  type LoadedImage,
+  loadImageFile,
+  stripExtension,
+} from "@/lib/image";
+import { BUILTIN_PRESETS } from "@/lib/presets";
+import { useImportedPresets } from "@/lib/presetStore";
+import { parseXmpPreset, type Preset } from "@/lib/xmp";
+import { AdjustmentsPanel } from "./AdjustmentsPanel";
+import { DropZone } from "./DropZone";
+import { ImageViewport, type ViewportHandle } from "./ImageViewport";
+import { PresetsPanel } from "./PresetsPanel";
+
+type ExportFormat = "image/jpeg" | "image/png" | "image/webp";
+
+export function Editor() {
+  const viewportRef = useRef<ViewportHandle>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const [image, setImage] = useState<LoadedImage | null>(null);
+  const [adjustments, setAdjustments] = useState<Adjustments>(createDefaultAdjustments);
+  const [importedPresets, persistPresets] = useImportedPresets();
+  const [activePresetId, setActivePresetId] = useState<string | null>(null);
+  const [compare, setCompare] = useState(false);
+  const [dragging, setDragging] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [exportFormat, setExportFormat] = useState<ExportFormat>("image/jpeg");
+  const [toast, setToast] = useState<{ message: string; kind: "error" | "info" } | null>(null);
+
+  // ----- toast -----
+  const notify = useCallback((message: string, kind: "error" | "info" = "error") => {
+    setToast({ message, kind });
+  }, []);
+  useEffect(() => {
+    if (!toast) return;
+    const id = setTimeout(() => setToast(null), 5000);
+    return () => clearTimeout(id);
+  }, [toast]);
+
+  // ----- file handling -----
+  const openImage = useCallback(
+    async (file: File) => {
+      setLoading(true);
+      try {
+        const max = viewportRef.current?.maxTextureSize ?? 4096;
+        const loaded = await loadImageFile(file, max);
+        setImage((prev) => {
+          prev?.bitmap.close();
+          return loaded;
+        });
+        if (loaded.width !== loaded.sourceWidth) {
+          notify(
+            `Image downscaled to ${loaded.width}×${loaded.height} to fit this GPU's texture limit.`,
+            "info",
+          );
+        }
+      } catch (e) {
+        notify(e instanceof Error ? e.message : "Couldn't open that file.");
+      } finally {
+        setLoading(false);
+      }
+    },
+    [notify],
+  );
+
+  const importPresetFiles = useCallback(
+    async (files: File[]) => {
+      const added: Preset[] = [];
+      const failed: string[] = [];
+      for (const f of files) {
+        try {
+          const text = await f.text();
+          added.push(parseXmpPreset(text, stripExtension(f.name)));
+        } catch {
+          failed.push(f.name);
+        }
+      }
+      if (added.length) {
+        persistPresets((prev) => [...prev, ...added]);
+        notify(
+          `Imported ${added.length} preset${added.length === 1 ? "" : "s"}${
+            added.length === 1 ? `: ${added[0].name}` : ""
+          }`,
+          "info",
+        );
+      }
+      if (failed.length) {
+        notify(`Couldn't read ${failed.join(", ")} — not a supported .xmp preset.`);
+      }
+    },
+    [persistPresets, notify],
+  );
+
+  const handleFiles = useCallback(
+    (files: File[]) => {
+      const xmp = files.filter(isXmpFile);
+      const images = files.filter((f) => !isXmpFile(f));
+      if (xmp.length) void importPresetFiles(xmp);
+      if (images.length) void openImage(images[0]);
+      if (images.length > 1) notify("Only one image at a time — opened the first one.", "info");
+    },
+    [importPresetFiles, openImage, notify],
+  );
+
+  // Window-level drag & drop so a photo can be dropped anywhere.
+  useEffect(() => {
+    let depth = 0;
+    const onEnter = (e: DragEvent) => {
+      if (!e.dataTransfer?.types.includes("Files")) return;
+      e.preventDefault();
+      depth++;
+      setDragging(true);
+    };
+    const onOver = (e: DragEvent) => {
+      if (!e.dataTransfer?.types.includes("Files")) return;
+      e.preventDefault();
+    };
+    const onLeave = () => {
+      depth = Math.max(0, depth - 1);
+      if (depth === 0) setDragging(false);
+    };
+    const onDrop = (e: DragEvent) => {
+      e.preventDefault();
+      depth = 0;
+      setDragging(false);
+      const files = Array.from(e.dataTransfer?.files ?? []);
+      if (files.length) handleFiles(files);
+    };
+    window.addEventListener("dragenter", onEnter);
+    window.addEventListener("dragover", onOver);
+    window.addEventListener("dragleave", onLeave);
+    window.addEventListener("drop", onDrop);
+    return () => {
+      window.removeEventListener("dragenter", onEnter);
+      window.removeEventListener("dragover", onOver);
+      window.removeEventListener("dragleave", onLeave);
+      window.removeEventListener("drop", onDrop);
+    };
+  }, [handleFiles]);
+
+  // Keyboard: "\" toggles before/after.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target && ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)) return;
+      if (e.key === "\\") {
+        e.preventDefault();
+        setCompare((c) => !c);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  // ----- adjustments -----
+  const updateAdjustments = (patch: Partial<Adjustments>) => {
+    setAdjustments((prev) => ({ ...prev, ...patch }));
+    setActivePresetId(null);
+  };
+  const resetAll = () => {
+    setAdjustments(createDefaultAdjustments());
+    setActivePresetId(null);
+  };
+  const applyPresetToImage = (preset: Preset) => {
+    // Presets are applied on a clean slate rather than stacked on current edits.
+    setAdjustments(applyPreset(createDefaultAdjustments(), preset.adjustments));
+    setActivePresetId(preset.id);
+  };
+
+  // ----- export -----
+  const exportImage = async () => {
+    if (!image || !viewportRef.current) return;
+    setExporting(true);
+    try {
+      const blob = await viewportRef.current.exportBlob(exportFormat, 0.92);
+      const ext = exportFormat === "image/png" ? "png" : exportFormat === "image/webp" ? "webp" : "jpg";
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${stripExtension(image.name)}-edited.${ext}`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (e) {
+      notify(e instanceof Error ? e.message : "Export failed.");
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const presets = [...importedPresets, ...BUILTIN_PRESETS];
+  const edited = !isDefault(adjustments);
+
+  return (
+    <div className="flex h-dvh flex-col bg-zinc-950 text-zinc-200">
+      {/* Header */}
+      <header className="flex h-12 shrink-0 items-center gap-3 border-b border-zinc-800 px-4">
+        <div className="flex items-center gap-2">
+          <span className="grid h-6 w-6 place-items-center rounded bg-zinc-100 text-[11px] font-bold text-zinc-900">
+            R
+          </span>
+          <span className="text-sm font-semibold tracking-tight">RAW Editor</span>
+        </div>
+        <div className="mx-2 h-5 w-px bg-zinc-800" />
+        <div className="min-w-0 flex-1 truncate text-xs text-zinc-400">
+          {image ? (
+            <>
+              <span className="text-zinc-200">{image.name}</span>
+              <span className="mx-2 text-zinc-600">·</span>
+              {image.sourceWidth} × {image.sourceHeight}
+              {loading && <span className="ml-2 text-zinc-500">Loading…</span>}
+            </>
+          ) : loading ? (
+            "Loading…"
+          ) : (
+            "No image open"
+          )}
+        </div>
+
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*,.xmp"
+          className="hidden"
+          onChange={(e) => {
+            const files = Array.from(e.target.files ?? []);
+            if (files.length) handleFiles(files);
+            e.target.value = "";
+          }}
+        />
+        <HeaderButton onClick={() => fileInputRef.current?.click()}>Open</HeaderButton>
+        <HeaderButton
+          disabled={!image}
+          active={compare}
+          onMouseDown={() => setCompare(true)}
+          onMouseUp={() => setCompare(false)}
+          onMouseLeave={() => setCompare(false)}
+          title="Hold to see the original (or press \)"
+        >
+          Before
+        </HeaderButton>
+        <HeaderButton disabled={!edited} onClick={resetAll} title="Reset all adjustments">
+          Reset
+        </HeaderButton>
+        <div className="flex items-stretch overflow-hidden rounded-md border border-zinc-700">
+          <select
+            value={exportFormat}
+            onChange={(e) => setExportFormat(e.target.value as ExportFormat)}
+            className="bg-zinc-900 px-2 text-[11px] text-zinc-300 outline-none"
+            aria-label="Export format"
+          >
+            <option value="image/jpeg">JPEG</option>
+            <option value="image/png">PNG</option>
+            <option value="image/webp">WebP</option>
+          </select>
+          <button
+            type="button"
+            disabled={!image || exporting}
+            onClick={exportImage}
+            className="border-l border-zinc-700 bg-zinc-100 px-3 py-1 text-xs font-medium text-zinc-900 hover:bg-white disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {exporting ? "Exporting…" : "Export"}
+          </button>
+        </div>
+      </header>
+
+      {/* Workspace */}
+      <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[minmax(0,1fr)_340px]">
+        <main className="relative min-h-[50vh] bg-[#111113] p-6 lg:min-h-0">
+          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(255,255,255,0.03),transparent_70%)]" />
+          <ImageViewport
+            ref={viewportRef}
+            image={image}
+            adjustments={adjustments}
+            compare={compare}
+            onError={notify}
+          >
+            {!image && (
+              <DropZone active={dragging} onBrowse={() => fileInputRef.current?.click()} />
+            )}
+            {image && dragging && (
+              <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-sky-500/10 backdrop-blur-[1px]">
+                <div className="rounded-xl border-2 border-dashed border-sky-400 bg-zinc-950/80 px-6 py-4 text-sm text-sky-200">
+                  Drop to replace the photo (edits are kept)
+                </div>
+              </div>
+            )}
+          </ImageViewport>
+        </main>
+
+        <aside className="min-h-0 overflow-y-auto border-t border-zinc-800 bg-zinc-950 lg:border-l lg:border-t-0">
+          <PresetsPanel
+            presets={presets}
+            activeId={activePresetId}
+            onApply={applyPresetToImage}
+            onImportFiles={(files) => void importPresetFiles(files)}
+            onRemove={(id) => persistPresets((prev) => prev.filter((p) => p.id !== id))}
+            disabled={!image}
+          />
+          <AdjustmentsPanel adjustments={adjustments} onChange={updateAdjustments} disabled={!image} />
+          <div className="px-4 py-3 text-[11px] leading-relaxed text-zinc-600">
+            Double-click any slider to reset it. Hold <kbd className="rounded border border-zinc-700 px-1">\</kbd>{" "}
+            or the Before button to compare with the original.
+          </div>
+        </aside>
+      </div>
+
+      {/* Toast */}
+      {toast && (
+        <div
+          role="status"
+          className={`fixed bottom-5 left-1/2 z-50 -translate-x-1/2 rounded-lg border px-4 py-2 text-xs shadow-xl ${
+            toast.kind === "error"
+              ? "border-red-900/60 bg-red-950/90 text-red-200"
+              : "border-zinc-700 bg-zinc-900/95 text-zinc-200"
+          }`}
+        >
+          {toast.message}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function HeaderButton({
+  active,
+  className = "",
+  ...props
+}: React.ButtonHTMLAttributes<HTMLButtonElement> & { active?: boolean }) {
+  return (
+    <button
+      type="button"
+      {...props}
+      className={`rounded-md border px-3 py-1 text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
+        active
+          ? "border-sky-500/70 bg-sky-500/15 text-white"
+          : "border-zinc-700 text-zinc-300 hover:border-zinc-500 hover:text-white"
+      } ${className}`}
+    />
+  );
+}
