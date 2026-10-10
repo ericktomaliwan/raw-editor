@@ -43,12 +43,26 @@ export function collectDroppedFiles(dt: DataTransfer): Promise<DroppedFile[]> {
 
   return (async () => {
     const out: DroppedFile[] = [];
-    for (const entry of entries) await walk(entry, "", out);
+    for (const entry of entries) await walk(entry, "", out, 0);
     return out;
   })();
 }
 
-async function walk(entry: FileSystemEntry, parentPath: string, out: DroppedFile[]) {
+/**
+ * Bounds on a folder drop, so dropping something huge by accident (a home
+ * folder, a whole drive) can't make the tab walk the entire tree and hang.
+ * Generous for real preset packs, which are a few levels and hundreds of files.
+ */
+const MAX_DEPTH = 8;
+const MAX_FILES = 5000;
+
+async function walk(
+  entry: FileSystemEntry,
+  parentPath: string,
+  out: DroppedFile[],
+  depth: number,
+) {
+  if (out.length >= MAX_FILES) return;
   const name = entry.name;
   // Skip macOS resource forks / hidden files inside dropped folders.
   if (name.startsWith(".") || name === "__MACOSX") return;
@@ -69,14 +83,15 @@ async function walk(entry: FileSystemEntry, parentPath: string, out: DroppedFile
   }
 
   if (entry.isDirectory) {
+    if (depth >= MAX_DEPTH) return;
     const reader = (entry as FileSystemDirectoryEntry).createReader();
     // readEntries returns results in batches (Chrome caps at 100); loop until empty.
-    for (;;) {
+    while (out.length < MAX_FILES) {
       const batch = await new Promise<FileSystemEntry[]>((resolve, reject) =>
         reader.readEntries(resolve, reject),
       ).catch(() => [] as FileSystemEntry[]);
       if (!batch.length) break;
-      for (const child of batch) await walk(child, path, out);
+      for (const child of batch) await walk(child, path, out, depth + 1);
     }
   }
 }

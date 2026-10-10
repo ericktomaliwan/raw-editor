@@ -232,6 +232,113 @@ export function applyPreset(
   return next;
 }
 
+/**
+ * Valid range of every numeric field. Typed as a full Record so adding a field
+ * to `Adjustments` without a range is a compile error.
+ */
+const NUMERIC_RANGES: Record<NumericKey, readonly [min: number, max: number]> = {
+  temperature: [-100, 100],
+  tint: [-100, 100],
+  exposure: [-5, 5],
+  contrast: [-100, 100],
+  highlights: [-100, 100],
+  shadows: [-100, 100],
+  whites: [-100, 100],
+  blacks: [-100, 100],
+  texture: [-100, 100],
+  clarity: [-100, 100],
+  dehaze: [-100, 100],
+  vibrance: [-100, 100],
+  saturation: [-100, 100],
+  parametricShadows: [-100, 100],
+  parametricDarks: [-100, 100],
+  parametricLights: [-100, 100],
+  parametricHighlights: [-100, 100],
+  shadowHue: [0, 360],
+  shadowSaturation: [0, 100],
+  midtoneHue: [0, 360],
+  midtoneSaturation: [0, 100],
+  highlightHue: [0, 360],
+  highlightSaturation: [0, 100],
+  globalHue: [0, 360],
+  globalSaturation: [0, 100],
+  gradingBalance: [-100, 100],
+  shadowTint: [-100, 100],
+  calRedHue: [-100, 100],
+  calRedSaturation: [-100, 100],
+  calGreenHue: [-100, 100],
+  calGreenSaturation: [-100, 100],
+  calBlueHue: [-100, 100],
+  calBlueSaturation: [-100, 100],
+  sharpness: [0, 150],
+  vignette: [-100, 100],
+  grain: [0, 100],
+};
+
+/** Hues are angles: out-of-range values wrap instead of clamping. */
+const HUE_KEYS: ReadonlySet<NumericKey> = new Set([
+  "shadowHue",
+  "midtoneHue",
+  "highlightHue",
+  "globalHue",
+]);
+const CURVE_KEYS = ["toneCurve", "toneCurveRed", "toneCurveGreen", "toneCurveBlue"] as const;
+const HSL_KEYS = ["hslHue", "hslSaturation", "hslLuminance"] as const;
+
+/** Far more than any real point curve needs; the LUT is only 256 entries wide. */
+export const MAX_CURVE_POINTS = 64;
+
+const isFiniteNumber = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
+const isRecord = (v: unknown): v is Record<string, unknown> =>
+  typeof v === "object" && v !== null && !Array.isArray(v);
+const clampTo = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+
+/**
+ * Rebuild a (partial) adjustment set from data we don't control: a parsed
+ * .xmp file or whatever is sitting in localStorage. Only known fields with the
+ * right type survive, numbers are forced into range and curves are bounded, so
+ * nothing malformed can reach React or the shader uniforms.
+ */
+export function sanitizeAdjustments(input: unknown): Partial<Adjustments> {
+  const out: Partial<Adjustments> = {};
+  if (!isRecord(input)) return out;
+
+  for (const key of Object.keys(NUMERIC_RANGES) as NumericKey[]) {
+    const v = input[key];
+    if (!isFiniteNumber(v)) continue;
+    const [lo, hi] = NUMERIC_RANGES[key];
+    out[key] = HUE_KEYS.has(key) && (v < lo || v > hi) ? ((v % 360) + 360) % 360 : clampTo(v, lo, hi);
+  }
+
+  for (const key of CURVE_KEYS) {
+    const v = input[key];
+    if (!Array.isArray(v)) continue;
+    const points: CurvePoint[] = [];
+    for (const p of v) {
+      if (points.length >= MAX_CURVE_POINTS) break;
+      if (Array.isArray(p) && isFiniteNumber(p[0]) && isFiniteNumber(p[1])) {
+        points.push([clampTo(p[0], 0, 255), clampTo(p[1], 0, 255)]);
+      }
+    }
+    out[key] = points;
+  }
+
+  for (const key of HSL_KEYS) {
+    const v = input[key];
+    if (!isRecord(v)) continue;
+    // Partial on purpose: applyPreset() fills the missing channels from the base.
+    const triple: Partial<HslTriple> = {};
+    for (const ch of HSL_CHANNELS) {
+      const c = v[ch];
+      if (isFiniteNumber(c)) triple[ch] = clampTo(c, -100, 100);
+    }
+    out[key] = triple as HslTriple;
+  }
+
+  if (typeof input.grayscale === "boolean") out.grayscale = input.grayscale;
+  return out;
+}
+
 export function isDefault(adj: Adjustments): boolean {
   return JSON.stringify(adj) === JSON.stringify(DEFAULT_ADJUSTMENTS);
 }

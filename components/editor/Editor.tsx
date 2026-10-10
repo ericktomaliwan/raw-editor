@@ -18,7 +18,7 @@ import {
 } from "@/lib/image";
 import { formatRawMetadata } from "@/lib/raw/decoder";
 import { useImportedPresets } from "@/lib/presetStore";
-import { parseXmpPreset, type Preset } from "@/lib/xmp";
+import { MAX_XMP_BYTES, parseXmpPreset, type Preset } from "@/lib/xmp";
 import { AdjustmentsPanel } from "./AdjustmentsPanel";
 import { DropZone } from "./DropZone";
 import { ImageViewport, type ViewportHandle } from "./ImageViewport";
@@ -91,11 +91,11 @@ export function Editor() {
       const failed: string[] = [];
       for (const { file, folder } of files) {
         try {
+          // Checked before reading so an oversized file is never pulled into memory.
+          if (file.size > MAX_XMP_BYTES) throw new Error("Preset file is too large.");
           const text = await file.text();
-          const preset = parseXmpPreset(text, stripExtension(file.name));
           // A dropped folder supplies the group when the preset doesn't carry one.
-          if (folder && !preset.group) preset.group = folder;
-          added.push(preset);
+          added.push(parseXmpPreset(text, stripExtension(file.name), folder));
         } catch {
           failed.push(file.name);
         }
@@ -110,7 +110,12 @@ export function Editor() {
         );
       }
       if (failed.length) {
-        notify(`Couldn't read ${failed.join(", ")} — not a supported .xmp preset.`);
+        // File names are arbitrary and a folder drop can fail in bulk: keep the toast bounded.
+        const shown = failed.slice(0, 3).map((n) => (n.length > 60 ? `${n.slice(0, 60)}…` : n));
+        const more = failed.length - shown.length;
+        notify(
+          `Couldn't read ${shown.join(", ")}${more > 0 ? ` and ${more} more` : ""} — not a supported .xmp preset.`,
+        );
       }
     },
     [persistPresets, notify],

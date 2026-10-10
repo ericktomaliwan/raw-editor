@@ -1,18 +1,74 @@
 import type { NextConfig } from "next";
 
+const isDev = process.env.NODE_ENV === "development";
+
+/**
+ * Content Security Policy. The app is fully self-contained (no third-party
+ * scripts, fonts, images or API calls), so everything is limited to our own
+ * origin. `connect-src 'self'` also backs the "nothing is uploaded" promise:
+ * page code cannot send a photo to another host.
+ *
+ * `script-src` needs `'unsafe-inline'` because the page is statically
+ * prerendered: Next's inline bootstrap scripts and the drag/drop guard in
+ * app/layout.tsx can't carry a per-request nonce. React's dev tooling needs
+ * `'unsafe-eval'`, in development only.
+ */
+function contentSecurityPolicy(scriptSrc: string): string {
+  return [
+    "default-src 'self'",
+    `script-src ${scriptSrc}`,
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' blob: data:",
+    "font-src 'self'",
+    // `ws:` is for the dev server's hot-reload socket.
+    `connect-src 'self'${isDev ? " ws:" : ""}`,
+    "worker-src 'self'",
+    "object-src 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+    "frame-ancestors 'none'",
+  ].join("; ");
+}
+
+const PAGE_CSP = contentSecurityPolicy(`'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ""}`);
+
+/**
+ * The RAW decoder worker runs under the policy served with its own file, not
+ * the page's. It compiles WebAssembly and its glue code builds call wrappers
+ * with `new Function`, so it needs `'unsafe-eval'`. Scoping that to /libraw
+ * keeps eval out of the page itself.
+ */
+const DECODER_CSP = contentSecurityPolicy("'self' 'unsafe-eval'");
+
 const nextConfig: NextConfig = {
   cacheComponents: true,
   partialPrefetching: true,
-  // The RAW decoder (libraw-wasm) uses threads => SharedArrayBuffer, which
-  // browsers only expose to cross-origin-isolated pages.
   async headers() {
     return [
       {
         source: "/(.*)",
         headers: [
+          // The RAW decoder (libraw-wasm) uses threads => SharedArrayBuffer, which
+          // browsers only expose to cross-origin-isolated pages.
           { key: "Cross-Origin-Opener-Policy", value: "same-origin" },
           { key: "Cross-Origin-Embedder-Policy", value: "require-corp" },
+          { key: "Content-Security-Policy", value: PAGE_CSP },
+          // Never let the browser guess a content type.
+          { key: "X-Content-Type-Options", value: "nosniff" },
+          // No framing by other sites (older browsers; CSP frame-ancestors covers the rest).
+          { key: "X-Frame-Options", value: "DENY" },
+          { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+          // The editor uses none of these device features.
+          {
+            key: "Permissions-Policy",
+            value: "camera=(), microphone=(), geolocation=(), payment=(), usb=()",
+          },
         ],
+      },
+      {
+        // Listed after the catch-all so this policy wins for the decoder files.
+        source: "/libraw/:path*",
+        headers: [{ key: "Content-Security-Policy", value: DECODER_CSP }],
       },
     ];
   },

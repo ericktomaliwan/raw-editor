@@ -3,6 +3,7 @@ import {
   type CurvePoint,
   HSL_CHANNELS,
   type HslTriple,
+  sanitizeAdjustments,
 } from "./adjustments";
 
 export interface Preset {
@@ -11,6 +12,19 @@ export interface Preset {
   group?: string;
   adjustments: Partial<Adjustments>;
   source: "imported";
+}
+
+/**
+ * Presets come from files downloaded off the internet, so bound what we accept.
+ * Real presets are a few KB; ones that embed a colour lookup table reach a few MB.
+ */
+export const MAX_XMP_BYTES = 10 * 1024 * 1024;
+/** Longest preset / group name kept (shown in the panel and stored). */
+export const MAX_PRESET_LABEL = 120;
+
+/** Trim a preset or group name and cap its length. */
+export function cleanLabel(value: string | undefined): string {
+  return (value ?? "").trim().slice(0, MAX_PRESET_LABEL).trim();
 }
 
 const RDF_NS = "http://www.w3.org/1999/02/22-rdf-syntax-ns#";
@@ -205,8 +219,8 @@ export function parseXmpPreset(
   const gray = values.get("ConvertToGrayscale");
   if (gray !== undefined) set("grayscale", /^true$/i.test(gray));
 
-  const name = values.get("Name")?.trim() || fallbackName;
-  const group = values.get("Group")?.trim() || fallbackGroup?.trim() || undefined;
+  const name = cleanLabel(values.get("Name")) || cleanLabel(fallbackName) || "Imported preset";
+  const group = cleanLabel(values.get("Group")) || cleanLabel(fallbackGroup) || undefined;
 
   if (Object.keys(adj).length === 0) {
     throw new Error("This XMP file doesn't contain any supported edit settings.");
@@ -216,7 +230,8 @@ export function parseXmpPreset(
     id: `imported-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
     name,
     group,
-    adjustments: adj,
+    // Final pass over everything parsed above: enforces ranges and curve size.
+    adjustments: sanitizeAdjustments(adj),
     source: "imported",
   };
 }
