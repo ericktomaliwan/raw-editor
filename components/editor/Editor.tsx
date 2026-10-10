@@ -16,7 +16,6 @@ import {
   stripExtension,
 } from "@/lib/image";
 import { formatRawMetadata } from "@/lib/raw/decoder";
-import { BUILTIN_PRESETS } from "@/lib/presets";
 import { useImportedPresets } from "@/lib/presetStore";
 import { parseXmpPreset, type Preset } from "@/lib/xmp";
 import { AdjustmentsPanel } from "./AdjustmentsPanel";
@@ -219,7 +218,6 @@ export function Editor() {
     }
   };
 
-  const presets = [...importedPresets, ...BUILTIN_PRESETS];
   const edited = !isDefault(adjustments);
 
   return (
@@ -346,7 +344,7 @@ export function Editor() {
 
         <aside className="min-h-0 overflow-y-auto border-t border-zinc-800 bg-zinc-950 lg:border-l lg:border-t-0">
           <PresetsPanel
-            presets={presets}
+            presets={importedPresets}
             activeId={activePresetId}
             onApply={applyPresetToImage}
             onImportFiles={(files) => void importPresetFiles(files)}

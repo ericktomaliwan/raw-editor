@@ -24,16 +24,14 @@ export function PresetsPanel({
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
 
+  // Group by the preset's own group name (carried in the .xmp), in import order.
   const groups = new Map<string, Preset[]>();
   for (const p of presets) {
-    const g = p.source === "imported" ? "Imported" : (p.group ?? "Presets");
+    const g = p.group?.trim() || "Imported";
     if (!groups.has(g)) groups.set(g, []);
     groups.get(g)!.push(p);
   }
-  // Imported presets first so new ones are easy to find.
-  const ordered = [...groups.entries()].sort(([a], [b]) =>
-    a === "Imported" ? -1 : b === "Imported" ? 1 : 0,
-  );
+  const ordered = [...groups.entries()];
 
   // Actual file handling happens in the window-level drop handler (Editor),
   // which routes .xmp files to the preset importer. This only drives the hover UI.
@@ -97,27 +95,35 @@ export function PresetsPanel({
                     >
                       {p.name}
                     </button>
-                    {p.source === "imported" && (
-                      <button
-                        type="button"
-                        onClick={() => onRemove(p.id)}
-                        className="absolute -right-1 -top-1 hidden h-4 w-4 items-center justify-center rounded-full bg-zinc-700 text-[10px] text-zinc-200 hover:bg-red-600 group-hover/preset:flex"
-                        title="Remove preset"
-                        aria-label={`Remove ${p.name}`}
-                      >
-                        ×
-                      </button>
-                    )}
+                    <button
+                      type="button"
+                      onClick={() => onRemove(p.id)}
+                      className="absolute -right-1 -top-1 hidden h-4 w-4 items-center justify-center rounded-full bg-zinc-700 text-[10px] text-zinc-200 hover:bg-red-600 group-hover/preset:flex"
+                      title="Remove preset"
+                      aria-label={`Remove ${p.name}`}
+                    >
+                      ×
+                    </button>
                   </div>
                 );
               })}
             </div>
           </div>
         ))}
-        <p className="text-[11px] leading-relaxed text-zinc-600">
-          Drop <span className="text-zinc-500">.xmp</span> preset files here to add
-          them.
-        </p>
+        {presets.length === 0 ? (
+          <button
+            type="button"
+            onClick={() => inputRef.current?.click()}
+            className="rounded-md border border-dashed border-zinc-800 px-3 py-4 text-center text-[11px] leading-relaxed text-zinc-500 hover:border-zinc-600 hover:text-zinc-300"
+          >
+            No presets yet. Drop <span className="text-zinc-400">.xmp</span> files here or click
+            to import.
+          </button>
+        ) : (
+          <p className="text-[11px] leading-relaxed text-zinc-600">
+            Drop <span className="text-zinc-500">.xmp</span> preset files here to add more.
+          </p>
+        )}
       </div>
     </Section>
   );

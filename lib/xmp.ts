@@ -10,7 +10,7 @@ export interface Preset {
   name: string;
   group?: string;
   adjustments: Partial<Adjustments>;
-  source: "builtin" | "imported";
+  source: "imported";
 }
 
 const RDF_NS = "http://www.w3.org/1999/02/22-rdf-syntax-ns#";
