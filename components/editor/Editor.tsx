@@ -7,6 +7,7 @@ import {
   createDefaultAdjustments,
   isDefault,
 } from "@/lib/adjustments";
+import { collectDroppedFiles, type DroppedFile } from "@/lib/dropFiles";
 import {
   isRawFile,
   isXmpFile,
@@ -85,15 +86,18 @@ export function Editor() {
   );
 
   const importPresetFiles = useCallback(
-    async (files: File[]) => {
+    async (files: DroppedFile[]) => {
       const added: Preset[] = [];
       const failed: string[] = [];
-      for (const f of files) {
+      for (const { file, folder } of files) {
         try {
-          const text = await f.text();
-          added.push(parseXmpPreset(text, stripExtension(f.name)));
+          const text = await file.text();
+          const preset = parseXmpPreset(text, stripExtension(file.name));
+          // A dropped folder supplies the group when the preset doesn't carry one.
+          if (folder && !preset.group) preset.group = folder;
+          added.push(preset);
         } catch {
-          failed.push(f.name);
+          failed.push(file.name);
         }
       }
       if (added.length) {
@@ -113,11 +117,11 @@ export function Editor() {
   );
 
   const handleFiles = useCallback(
-    (files: File[]) => {
-      const xmp = files.filter(isXmpFile);
-      const images = files.filter((f) => !isXmpFile(f));
+    (dropped: DroppedFile[]) => {
+      const xmp = dropped.filter(({ file }) => isXmpFile(file));
+      const images = dropped.filter(({ file }) => !isXmpFile(file));
       if (xmp.length) void importPresetFiles(xmp);
-      if (images.length) void openImage(images[0]);
+      if (images.length) void openImage(images[0].file);
       if (images.length > 1) notify("Only one image at a time — opened the first one.", "info");
     },
     [importPresetFiles, openImage, notify],
@@ -153,8 +157,12 @@ export function Editor() {
       e.preventDefault();
       depth = 0;
       setDragging(false);
-      const files = Array.from(e.dataTransfer?.files ?? []);
-      if (files.length) handleFiles(files);
+      const dt = e.dataTransfer;
+      if (!dt) return;
+      // Collect synchronously: entries are only readable during the event.
+      void collectDroppedFiles(dt).then((dropped) => {
+        if (dropped.length) handleFiles(dropped);
+      });
     };
     // Capture phase so nothing deeper in the tree can swallow the events.
     window.addEventListener("dragenter", onEnter, true);
@@ -264,7 +272,7 @@ export function Editor() {
           className="hidden"
           onChange={(e) => {
             const files = Array.from(e.target.files ?? []);
-            if (files.length) handleFiles(files);
+            if (files.length) handleFiles(files.map((file) => ({ file, path: file.name })));
             e.target.value = "";
           }}
         />
@@ -347,7 +355,9 @@ export function Editor() {
             presets={importedPresets}
             activeId={activePresetId}
             onApply={applyPresetToImage}
-            onImportFiles={(files) => void importPresetFiles(files)}
+            onImportFiles={(files) =>
+              void importPresetFiles(files.map((file) => ({ file, path: file.name })))
+            }
             onRemove={(id) => persistPresets((prev) => prev.filter((p) => p.id !== id))}
             disabled={!image}
           />

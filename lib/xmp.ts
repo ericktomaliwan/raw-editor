@@ -34,7 +34,11 @@ function isEditSetting(node: Attr | Element): boolean {
  * element-style (`<crs:Exposure2012>+0.50</crs:Exposure2012>`) encodings,
  * plus rdf:Seq tone curves and rdf:Alt localized names.
  */
-export function parseXmpPreset(xml: string, fallbackName = "Imported preset"): Preset {
+export function parseXmpPreset(
+  xml: string,
+  fallbackName = "Imported preset",
+  fallbackGroup?: string,
+): Preset {
   const doc = new DOMParser().parseFromString(xml, "application/xml");
   const parseError = doc.getElementsByTagName("parsererror")[0];
   if (parseError) {
@@ -202,7 +206,7 @@ export function parseXmpPreset(xml: string, fallbackName = "Imported preset"): P
   if (gray !== undefined) set("grayscale", /^true$/i.test(gray));
 
   const name = values.get("Name")?.trim() || fallbackName;
-  const group = values.get("Group")?.trim() || undefined;
+  const group = values.get("Group")?.trim() || fallbackGroup?.trim() || undefined;
 
   if (Object.keys(adj).length === 0) {
     throw new Error("This XMP file doesn't contain any supported edit settings.");
