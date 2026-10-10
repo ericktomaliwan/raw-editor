@@ -114,7 +114,7 @@ export class Renderer {
     gl.bindTexture(gl.TEXTURE_2D, this.curveTex);
     this.uploadCurveIfChanged(adj);
 
-    this.setUniforms(adj, opts.bypass ?? false);
+    this.setUniforms(adj, opts.bypass ?? false, width, height);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
   }
 
@@ -155,12 +155,16 @@ export class Renderer {
     );
   }
 
-  private setUniforms(a: Adjustments, bypass: boolean) {
+  private setUniforms(a: Adjustments, bypass: boolean, outW: number, outH: number) {
     const gl = this.gl;
     const f = (name: string, v: number) => gl.uniform1f(this.loc(name), v);
     const n = (v: number) => v / 100;
 
     gl.uniform2f(this.loc("u_texel"), 1 / this.imageWidth, 1 / this.imageHeight);
+    gl.uniform2f(this.loc("u_outTexel"), 1 / outW, 1 / outH);
+    // Mip level the GPU is already sampling the source at for this output size.
+    const downscale = Math.max(this.imageWidth / outW, this.imageHeight / outH, 1);
+    f("u_baseLod", Math.log2(downscale));
     f("u_aspect", this.imageWidth / this.imageHeight);
     f("u_bypass", bypass ? 1 : 0);
     f("u_hasCurve", hasPointCurve(a) ? 1 : 0);

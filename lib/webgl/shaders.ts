@@ -17,6 +17,8 @@ out vec4 outColor;
 uniform sampler2D u_image;
 uniform sampler2D u_curve;   // 256x1 RGBA: r,g,b per-channel curves, a = composite
 uniform vec2  u_texel;        // 1 / image size
+uniform vec2  u_outTexel;     // 1 / output (canvas) size, in uv
+uniform float u_baseLod;      // mip level the output is sampled at (log2 of downscale)
 uniform float u_aspect;       // width / height
 uniform float u_bypass;       // 1 = show original
 uniform float u_hasCurve;
@@ -144,22 +146,24 @@ vec3 pointCurve(vec3 c) {
 }
 
 // Local contrast using mip levels of the *source* image as cheap blurs.
+// Blur levels are relative to u_baseLod so the effect looks the same whether
+// we're drawing a downscaled preview or the full-resolution export.
 vec3 presence(vec3 c, vec3 src) {
   if (u_texture == 0.0 && u_clarity == 0.0 && u_dehaze == 0.0) return c;
   float lSrc = luma(src);
   float l = luma(c);
 
   if (u_texture != 0.0) {
-    float lb = luma(textureLod(u_image, v_uv, 1.5).rgb);
+    float lb = luma(textureLod(u_image, v_uv, u_baseLod + 1.5).rgb);
     c += (lSrc - lb) * u_texture * 1.5;
   }
   if (u_clarity != 0.0) {
-    float lb = luma(textureLod(u_image, v_uv, 5.0).rgb);
+    float lb = luma(textureLod(u_image, v_uv, u_baseLod + 4.0).rgb);
     float mid = 1.0 - abs(l - 0.5) * 2.0; // emphasise midtones
     c += (lSrc - lb) * u_clarity * 1.2 * max(mid, 0.2);
   }
   if (u_dehaze != 0.0) {
-    vec3 blur = textureLod(u_image, v_uv, 6.0).rgb;
+    vec3 blur = textureLod(u_image, v_uv, u_baseLod + 5.0).rgb;
     float haze = min(min(blur.r, blur.g), blur.b);
     if (u_dehaze > 0.0) {
       float a = u_dehaze * 0.6 * haze;
@@ -245,14 +249,26 @@ vec3 saturationVibrance(vec3 c) {
   return c;
 }
 
+// Unsharp mask with a 1-output-pixel radius. Taps are spaced in *output*
+// pixels (not source texels) so the effect is visible at preview scale too.
 vec3 sharpen(vec3 c, vec3 src) {
   if (u_sharpness <= 0.0) return c;
-  vec3 n = texture(u_image, v_uv + vec2(0.0, -u_texel.y)).rgb
-         + texture(u_image, v_uv + vec2(0.0,  u_texel.y)).rgb
-         + texture(u_image, v_uv + vec2(-u_texel.x, 0.0)).rgb
-         + texture(u_image, v_uv + vec2( u_texel.x, 0.0)).rgb;
-  float detail = luma(src) - luma((n + src) / 5.0);
-  return c + detail * u_sharpness * 1.5;
+  vec2 o = u_outTexel;
+  float ls = luma(src);
+  float ln = luma(texture(u_image, v_uv + vec2(0.0, -o.y)).rgb)
+           + luma(texture(u_image, v_uv + vec2(0.0,  o.y)).rgb)
+           + luma(texture(u_image, v_uv + vec2(-o.x, 0.0)).rgb)
+           + luma(texture(u_image, v_uv + vec2( o.x, 0.0)).rgb);
+  float ld = luma(texture(u_image, v_uv + vec2(-o.x, -o.y)).rgb)
+           + luma(texture(u_image, v_uv + vec2( o.x, -o.y)).rgb)
+           + luma(texture(u_image, v_uv + vec2(-o.x,  o.y)).rgb)
+           + luma(texture(u_image, v_uv + vec2( o.x,  o.y)).rgb);
+  // Gaussian-ish 3x3 blur: centre 4, edges 2, corners 1 (sum 16)
+  float blur = (ls * 4.0 + ln * 2.0 + ld) / 16.0;
+  float detail = ls - blur;
+  // Suppress amplification of near-flat areas (noise) a little.
+  float mask = smoothstep(0.0, 0.02, abs(detail));
+  return c + detail * mask * u_sharpness * 2.5;
 }
 
 vec3 vignette(vec3 c) {
