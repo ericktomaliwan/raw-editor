@@ -8,11 +8,18 @@ const isDev = process.env.NODE_ENV === "development";
  * origin. `connect-src 'self'` also backs the "nothing is uploaded" promise:
  * page code cannot send a photo to another host.
  *
+ * Page-view analytics (@vercel/analytics) stays inside that rule in
+ * production: the script and its beacons are served from this origin under
+ * /_vercel/insights/*. Only the development build pulls a debug script from
+ * another host, which is allowed below in development only.
+ *
  * `script-src` needs `'unsafe-inline'` because the page is statically
  * prerendered: Next's inline bootstrap scripts and the drag/drop guard in
  * app/layout.tsx can't carry a per-request nonce. React's dev tooling needs
  * `'unsafe-eval'`, in development only.
  */
+const ANALYTICS_DEBUG_HOST = "https://va.vercel-scripts.com";
+
 function contentSecurityPolicy(scriptSrc: string): string {
   return [
     "default-src 'self'",
@@ -30,7 +37,9 @@ function contentSecurityPolicy(scriptSrc: string): string {
   ].join("; ");
 }
 
-const PAGE_CSP = contentSecurityPolicy(`'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ""}`);
+const PAGE_CSP = contentSecurityPolicy(
+  `'self' 'unsafe-inline'${isDev ? ` 'unsafe-eval' ${ANALYTICS_DEBUG_HOST}` : ""}`,
+);
 
 /**
  * The RAW decoder worker runs under the policy served with its own file, not
