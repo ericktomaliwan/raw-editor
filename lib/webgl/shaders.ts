@@ -36,6 +36,9 @@ uniform float u_hslLum[8];
 // Color grading: xy = (hue 0..1, sat 0..1)
 uniform vec2 u_gradeShadow, u_gradeMidtone, u_gradeHighlight, u_gradeGlobal;
 uniform float u_gradeBalance;
+// Calibration: primaries matrix (linear RGB) + shadow tint (-1..1, green..magenta)
+uniform mat3  u_calibration;
+uniform float u_shadowTint;
 // Detail / effects
 uniform float u_sharpness, u_vignette, u_grain, u_grayscale;
 
@@ -85,6 +88,18 @@ vec3 whiteBalance(vec3 lin) {
   vec3 gain = vec3(1.0 + t, 1.0 - g, 1.0 - t);
   gain /= luma(gain); // keep overall brightness stable
   return lin * gain;
+}
+
+// Camera calibration in linear light: re-mix the primaries, then tint shadows.
+vec3 calibrate(vec3 lin) {
+  lin = u_calibration * lin;
+  if (u_shadowTint != 0.0) {
+    float l = luma(lin);
+    float mask = 1.0 - smoothstep(0.0, 0.25, l); // linear-light shadows
+    vec3 tint = vec3(1.0, -1.0, 1.0) * u_shadowTint * 0.05 * mask;
+    lin += tint * min(l / 0.1, 1.0); // fade in from black so pure black stays neutral
+  }
+  return max(lin, 0.0);
 }
 
 vec3 toneBasic(vec3 c) {
@@ -297,6 +312,7 @@ void main() {
   // Linear-light stages
   vec3 lin = srgbToLinear(src);
   lin = whiteBalance(lin);
+  lin = calibrate(lin);
   lin *= exp2(u_exposure);
   vec3 c = linearToSrgb(lin);
 

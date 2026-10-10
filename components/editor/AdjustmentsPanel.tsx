@@ -6,6 +6,10 @@ import {
   BASIC_PRESENCE,
   BASIC_TONE,
   BASIC_WB,
+  CALIBRATION_BLUE,
+  CALIBRATION_GREEN,
+  CALIBRATION_RED,
+  CALIBRATION_SHADOWS,
   DEFAULT_ADJUSTMENTS,
   DETAIL,
   EFFECTS,
@@ -29,6 +33,13 @@ interface Props {
 const WB_TRACKS: Partial<Record<NumericKey, string>> = {
   temperature: "linear-gradient(90deg,#3b82f6,#a1a1aa,#f59e0b)",
   tint: "linear-gradient(90deg,#22c55e,#a1a1aa,#d946ef)",
+  shadowTint: "linear-gradient(90deg,#22c55e,#a1a1aa,#d946ef)",
+  calRedHue: "linear-gradient(90deg,hsl(330 80% 55%),hsl(0 80% 55%),hsl(30 80% 55%))",
+  calGreenHue: "linear-gradient(90deg,hsl(90 70% 50%),hsl(120 70% 45%),hsl(150 70% 45%))",
+  calBlueHue: "linear-gradient(90deg,hsl(210 80% 55%),hsl(240 80% 60%),hsl(270 80% 60%))",
+  calRedSaturation: "linear-gradient(90deg,#71717a,hsl(0 80% 55%))",
+  calGreenSaturation: "linear-gradient(90deg,#71717a,hsl(120 70% 45%))",
+  calBlueSaturation: "linear-gradient(90deg,#71717a,hsl(240 80% 60%))",
 };
 
 const HUE_TRACK =
@@ -73,6 +84,12 @@ export function AdjustmentsPanel({ adjustments: a, onChange, disabled }: Props) 
   ];
   const detailKeys = DETAIL.map((s) => s.key);
   const effectKeys = EFFECTS.map((s) => s.key);
+  const calibrationKeys = [
+    ...CALIBRATION_SHADOWS,
+    ...CALIBRATION_RED,
+    ...CALIBRATION_GREEN,
+    ...CALIBRATION_BLUE,
+  ].map((s) => s.key);
 
   const hslModified = HSL_CHANNELS.some(
     (c) => a.hslHue[c] !== 0 || a.hslSaturation[c] !== 0 || a.hslLuminance[c] !== 0,
@@ -214,6 +231,22 @@ export function AdjustmentsPanel({ adjustments: a, onChange, disabled }: Props) 
         onReset={() => resetKeys(effectKeys)}
       >
         {sliders(EFFECTS)}
+      </Section>
+
+      <Section
+        title="Calibration"
+        defaultOpen={false}
+        modified={isModified(calibrationKeys)}
+        onReset={() => resetKeys(calibrationKeys)}
+      >
+        <SubHeading>Shadows</SubHeading>
+        {sliders(CALIBRATION_SHADOWS)}
+        <SubHeading>Red Primary</SubHeading>
+        {sliders(CALIBRATION_RED)}
+        <SubHeading>Green Primary</SubHeading>
+        {sliders(CALIBRATION_GREEN)}
+        <SubHeading>Blue Primary</SubHeading>
+        {sliders(CALIBRATION_BLUE)}
       </Section>
     </div>
   );

@@ -1,4 +1,5 @@
 import { type Adjustments, HSL_CHANNELS } from "../adjustments";
+import { calibrationMatrix } from "../calibration";
 import { buildCurveTexture, hasPointCurve, LUT_SIZE } from "../curve";
 import { FRAGMENT_SHADER, VERTEX_SHADER } from "./shaders";
 
@@ -214,6 +215,9 @@ export class Renderer {
     );
     gl.uniform2f(this.loc("u_gradeGlobal"), hue(a.globalHue), n(a.globalSaturation));
     f("u_gradeBalance", n(a.gradingBalance));
+
+    gl.uniformMatrix3fv(this.loc("u_calibration"), false, calibrationMatrix(a));
+    f("u_shadowTint", n(a.shadowTint));
 
     f("u_sharpness", n(a.sharpness));
     f("u_vignette", n(a.vignette));

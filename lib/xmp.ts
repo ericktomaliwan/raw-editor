@@ -184,6 +184,15 @@ export function parseXmpPreset(xml: string, fallbackName = "Imported preset"): P
   set("globalSaturation", clampN(num("ColorGradeGlobalSat"), 0, 100));
   set("gradingBalance", clampN(first("SplitToningBalance", "ColorGradeBlending"), -100, 100));
 
+  // --- Calibration (camera primaries) ---
+  set("shadowTint", clampN(num("ShadowTint"), -100, 100));
+  set("calRedHue", clampN(num("RedHue"), -100, 100));
+  set("calRedSaturation", clampN(num("RedSaturation"), -100, 100));
+  set("calGreenHue", clampN(num("GreenHue"), -100, 100));
+  set("calGreenSaturation", clampN(num("GreenSaturation"), -100, 100));
+  set("calBlueHue", clampN(num("BlueHue"), -100, 100));
+  set("calBlueSaturation", clampN(num("BlueSaturation"), -100, 100));
+
   // --- Detail / effects ---
   set("sharpness", clampN(num("Sharpness"), 0, 150));
   set("vignette", clampN(first("PostCropVignetteAmount", "VignetteAmount"), -100, 100));

@@ -72,6 +72,14 @@ export interface Adjustments {
   globalHue: number;
   globalSaturation: number;
   gradingBalance: number; // -100..100
+  // Calibration (camera primaries), -100..100
+  shadowTint: number; // green (-) .. magenta (+) in the shadows
+  calRedHue: number;
+  calRedSaturation: number;
+  calGreenHue: number;
+  calGreenSaturation: number;
+  calBlueHue: number;
+  calBlueSaturation: number;
   // Detail
   sharpness: number; // 0..150
   // Effects
@@ -126,6 +134,13 @@ export const DEFAULT_ADJUSTMENTS: Adjustments = {
   globalHue: 0,
   globalSaturation: 0,
   gradingBalance: 0,
+  shadowTint: 0,
+  calRedHue: 0,
+  calRedSaturation: 0,
+  calGreenHue: 0,
+  calGreenSaturation: 0,
+  calBlueHue: 0,
+  calBlueSaturation: 0,
   sharpness: 0,
   vignette: 0,
   grain: 0,
@@ -176,6 +191,22 @@ export const PARAMETRIC_CURVE: SliderSpec[] = [
   { key: "parametricLights", label: "Lights", min: -100, max: 100 },
   { key: "parametricDarks", label: "Darks", min: -100, max: 100 },
   { key: "parametricShadows", label: "Shadows", min: -100, max: 100 },
+];
+
+export const CALIBRATION_SHADOWS: SliderSpec[] = [
+  { key: "shadowTint", label: "Shadow Tint", min: -100, max: 100 },
+];
+export const CALIBRATION_RED: SliderSpec[] = [
+  { key: "calRedHue", label: "Hue", min: -100, max: 100 },
+  { key: "calRedSaturation", label: "Saturation", min: -100, max: 100 },
+];
+export const CALIBRATION_GREEN: SliderSpec[] = [
+  { key: "calGreenHue", label: "Hue", min: -100, max: 100 },
+  { key: "calGreenSaturation", label: "Saturation", min: -100, max: 100 },
+];
+export const CALIBRATION_BLUE: SliderSpec[] = [
+  { key: "calBlueHue", label: "Hue", min: -100, max: 100 },
+  { key: "calBlueSaturation", label: "Saturation", min: -100, max: 100 },
 ];
 
 export const DETAIL: SliderSpec[] = [
