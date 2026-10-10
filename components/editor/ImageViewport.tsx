@@ -10,12 +10,25 @@ import {
 } from "react";
 import type { Adjustments } from "@/lib/adjustments";
 import type { LoadedImage } from "@/lib/image";
+import { encodeJpeg } from "@/lib/jpeg/encoder";
 import { Renderer } from "@/lib/webgl/renderer";
+
+export interface ExportResult {
+  blob: Blob;
+  /**
+   * True when a JPEG had to be written by the browser's built-in encoder
+   * because the MozJPEG encoder couldn't run. Always false for other formats.
+   */
+  usedBuiltInJpegEncoder: boolean;
+}
 
 export interface ViewportHandle {
   maxTextureSize: number;
-  /** Render at full image resolution and encode. */
-  exportBlob(type: string, quality?: number): Promise<Blob>;
+  /**
+   * Render at full image resolution and encode. `quality` is 0..1.
+   * JPEGs go through MozJPEG, with the browser's encoder as the fallback.
+   */
+  exportBlob(type: string, quality?: number): Promise<ExportResult>;
 }
 
 interface Props {
@@ -98,14 +111,44 @@ export function ImageViewport({ ref, image, adjustments, compare, onError, child
         const r = rendererRef.current;
         const canvas = canvasRef.current;
         if (!r || !canvas || !image) throw new Error("No image to export.");
-        r.render(adjustments, { width: image.width, height: image.height });
-        const blob = await new Promise<Blob | null>((resolve) =>
-          canvas.toBlob(resolve, type, quality),
-        );
-        // Restore the display-sized render.
-        r.render(adjustments, { width: pixelW, height: pixelH, bypass: compare });
+        const full = { width: image.width, height: image.height };
+        const restore = () => r.render(adjustments, { width: pixelW, height: pixelH, bypass: compare });
+        const builtIn = () =>
+          new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, type, quality));
+
+        let blob: Blob | null = null;
+        let usedBuiltInJpegEncoder = false;
+
+        if (type === "image/jpeg") {
+          // Read the full-size render back and hand it to MozJPEG in its worker.
+          // The display render is restored first: the pixels are already copied.
+          r.render(adjustments, full);
+          let pixels: ReturnType<Renderer["readPixels"]> = null;
+          try {
+            pixels = r.readPixels();
+          } catch {
+            pixels = null; // e.g. not enough memory for the readback buffer
+          }
+          restore();
+          if (pixels) {
+            try {
+              blob = await encodeJpeg({ ...pixels, flipY: true }, Math.round(quality * 100));
+            } catch (e) {
+              console.warn("[export] MozJPEG unavailable, using the browser's JPEG encoder:", e);
+            }
+          }
+          usedBuiltInJpegEncoder = blob === null;
+        }
+
+        if (!blob) {
+          // toBlob snapshots the canvas when called, so render right before it.
+          r.render(adjustments, full);
+          const result = builtIn();
+          restore();
+          blob = await result;
+        }
         if (!blob) throw new Error("Export failed — the image may be too large for this browser.");
-        return blob;
+        return { blob, usedBuiltInJpegEncoder };
       },
     }),
     [image, adjustments, pixelW, pixelH, compare],

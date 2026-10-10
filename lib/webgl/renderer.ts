@@ -119,6 +119,25 @@ export class Renderer {
     gl.drawArrays(gl.TRIANGLES, 0, 3);
   }
 
+  /**
+   * Read back the pixels of the last render as tightly packed RGBA.
+   * Rows come bottom-to-top (GL convention). Returns null when the browser
+   * gave the canvas a smaller drawing buffer than requested (very large
+   * images), since the readback would then not be the full-size picture.
+   */
+  readPixels(): { data: Uint8Array; width: number; height: number } | null {
+    const gl = this.gl;
+    const width = gl.drawingBufferWidth;
+    const height = gl.drawingBufferHeight;
+    if (width !== this.canvas.width || height !== this.canvas.height) return null;
+    const data = new Uint8Array(width * height * 4);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.pixelStorei(gl.PACK_ALIGNMENT, 1);
+    gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, data);
+    if (gl.getError() !== gl.NO_ERROR) return null;
+    return { data, width, height };
+  }
+
   dispose() {
     const gl = this.gl;
     if (this.imageTex) gl.deleteTexture(this.imageTex);

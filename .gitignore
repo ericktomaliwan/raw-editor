@@ -41,8 +41,9 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-# libraw-wasm runtime copied from node_modules by scripts/copy-libraw.mjs
+# WebAssembly runtimes copied into public/ by scripts/copy-wasm.mjs
 /public/libraw/
+/public/mozjpeg/
 
 # local AI assistant notes
 CLAUDE.md

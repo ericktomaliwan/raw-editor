@@ -12,8 +12,9 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
-    // Third-party WASM runtime copied from node_modules (see scripts/copy-libraw.mjs).
+    // WASM runtimes copied into public/ (see scripts/copy-wasm.mjs).
     "public/libraw/**",
+    "public/mozjpeg/**",
   ]),
 ]);
 

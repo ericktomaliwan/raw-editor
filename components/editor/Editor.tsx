@@ -26,9 +26,15 @@ import { PresetsPanel } from "./PresetsPanel";
 
 type ExportFormat = "image/jpeg" | "image/png" | "image/webp";
 
+/** JPEG export quality, as the familiar 1–100 scale. Lower = smaller file. */
+const JPEG_QUALITY_MIN = 1;
+const JPEG_QUALITY_MAX = 100;
+const JPEG_QUALITY_DEFAULT = 92;
+
 export function Editor() {
   const viewportRef = useRef<ViewportHandle>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const builtInJpegNoticeShown = useRef(false);
 
   const [image, setImage] = useState<LoadedImage | null>(null);
   const [adjustments, setAdjustments] = useState<Adjustments>(createDefaultAdjustments);
@@ -39,6 +45,7 @@ export function Editor() {
   const [loading, setLoading] = useState<string | null>(null); // status text while decoding
   const [exporting, setExporting] = useState(false);
   const [exportFormat, setExportFormat] = useState<ExportFormat>("image/jpeg");
+  const [jpegQuality, setJpegQuality] = useState(JPEG_QUALITY_DEFAULT);
   const [toast, setToast] = useState<{ message: string; kind: "error" | "info" } | null>(null);
 
   // ----- toast -----
@@ -216,8 +223,22 @@ export function Editor() {
     if (!image || !viewportRef.current) return;
     setExporting(true);
     try {
-      const blob = await viewportRef.current.exportBlob(exportFormat, 0.92);
-      const ext = exportFormat === "image/png" ? "png" : exportFormat === "image/webp" ? "webp" : "jpg";
+      // The quality field only applies to JPEG; WebP keeps its fixed setting and
+      // PNG is lossless (the encoder ignores the value).
+      const quality = exportFormat === "image/jpeg" ? jpegQuality / 100 : 0.92;
+      const { blob, usedBuiltInJpegEncoder } = await viewportRef.current.exportBlob(
+        exportFormat,
+        quality,
+      );
+      // The export still succeeds, just less tightly compressed. Say so once.
+      if (usedBuiltInJpegEncoder && !builtInJpegNoticeShown.current) {
+        builtInJpegNoticeShown.current = true;
+        notify(
+          "The optimised JPEG encoder couldn't run here, so the browser's own encoder was used. Files may be larger.",
+          "info",
+        );
+      }
+      const ext =exportFormat === "image/png" ? "png" : exportFormat === "image/webp" ? "webp" : "jpg";
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
@@ -306,6 +327,9 @@ export function Editor() {
             <option value="image/png">PNG</option>
             <option value="image/webp">WebP</option>
           </select>
+          {exportFormat === "image/jpeg" && (
+            <QualityField value={jpegQuality} onCommit={setJpegQuality} />
+          )}
           <button
             type="button"
             disabled={!image || exporting}
@@ -388,6 +412,62 @@ export function Editor() {
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * JPEG quality entry (1–100). Typing is free-form; the value is committed on
+ * blur or Enter, rounded and clamped into range. Anything that isn't a number
+ * is discarded and the previous value comes back. Escape cancels the edit.
+ */
+function QualityField({
+  value,
+  onCommit,
+}: {
+  value: number;
+  onCommit: (value: number) => void;
+}) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const cancelled = useRef(false);
+  const commit = () => {
+    if (draft !== null && !cancelled.current) {
+      const v = parseFloat(draft);
+      if (Number.isFinite(v)) {
+        onCommit(Math.min(JPEG_QUALITY_MAX, Math.max(JPEG_QUALITY_MIN, Math.round(v))));
+      }
+    }
+    cancelled.current = false;
+    setDraft(null);
+  };
+  const hint = `JPEG quality, ${JPEG_QUALITY_MIN}–${JPEG_QUALITY_MAX}. Lower numbers give a smaller file.`;
+  return (
+    <label
+      className="flex items-center gap-1 border-l border-zinc-700 bg-zinc-900 pl-2 pr-1 text-[11px] text-zinc-500"
+      title={hint}
+    >
+      Quality
+      <input
+        type="text"
+        inputMode="numeric"
+        maxLength={5}
+        className="w-7 bg-transparent text-right tabular-nums text-zinc-200 outline-none focus:text-white"
+        value={draft ?? String(value)}
+        onFocus={(e) => {
+          setDraft(String(value));
+          e.target.select();
+        }}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") e.currentTarget.blur();
+          if (e.key === "Escape") {
+            cancelled.current = true;
+            e.currentTarget.blur();
+          }
+        }}
+        aria-label={hint}
+      />
+    </label>
   );
 }
 

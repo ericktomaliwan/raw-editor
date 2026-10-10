@@ -7,7 +7,7 @@ import type {
 
 /**
  * Minimal client for the libraw-wasm worker, served as a static asset from
- * /public/libraw (see scripts/copy-libraw.mjs). Mirrors the package's own
+ * /public/libraw (see scripts/copy-wasm.mjs). Mirrors the package's own
  * index.js: messages are `{ id, fn, args }`, replies are `{ id, out | error }`.
  */
 const WORKER_URL = "/libraw/worker.js";
