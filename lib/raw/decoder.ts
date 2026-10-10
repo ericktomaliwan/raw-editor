@@ -159,12 +159,25 @@ export async function decodeRawFile(file: File, opts: DecodeOptions): Promise<De
   }
 }
 
+/**
+ * sRGB transfer curve, in the form LibRaw's `gamm` parameter actually takes:
+ * all six slots, with the first being the *inverse* exponent (1/2.4) and the
+ * second the toe slope. The remaining four are derived by LibRaw.
+ *
+ * The package's typings say `[power, toe_slope]`, but a two-element array is
+ * silently ignored and LibRaw then falls back to its BT.709 default
+ * (0.45 / 4.5). Browsers display that as sRGB, which renders shadows and
+ * midtones too dark (18% grey at 104 instead of 118). Verified against a grey
+ * ramp; keep the six-element form.
+ */
+const SRGB_GAMMA = [1 / 2.4, 12.92, 0, 0, 0, 0] as unknown as LibRawSettings["gamm"];
+
 function buildSettings({ halfSize, bright }: { halfSize: boolean; bright: number }): LibRawSettings {
   return {
     useCameraWb: true, // start from the as-shot white balance
     outputColor: 1, // sRGB
     outputBps: 8,
-    gamm: [2.4, 12.92], // sRGB transfer curve
+    gamm: SRGB_GAMMA,
     userQual: 3, // AHD demosaic
     highlight: 0,
     // Deterministic brightness: no histogram-based auto-bright, just the
