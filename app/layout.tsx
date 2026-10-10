@@ -24,6 +24,17 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} dark h-full antialiased`}
     >
+      <head>
+        {/* Stop the browser from navigating to (i.e. downloading) a dropped
+            file in the window before React has hydrated and attached the
+            editor's own drag-and-drop handlers. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html:
+              "addEventListener('dragover',function(e){e.preventDefault()});addEventListener('drop',function(e){e.preventDefault()});",
+          }}
+        />
+      </head>
       <body className="min-h-full flex flex-col overscroll-none">{children}</body>
     </html>
   );

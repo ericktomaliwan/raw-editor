@@ -8,11 +8,14 @@ import {
   isDefault,
 } from "@/lib/adjustments";
 import {
+  isRawFile,
   isXmpFile,
   type LoadedImage,
   loadImageFile,
+  RAW_EXTENSIONS,
   stripExtension,
 } from "@/lib/image";
+import { formatRawMetadata } from "@/lib/raw/decoder";
 import { BUILTIN_PRESETS } from "@/lib/presets";
 import { useImportedPresets } from "@/lib/presetStore";
 import { parseXmpPreset, type Preset } from "@/lib/xmp";
@@ -33,7 +36,7 @@ export function Editor() {
   const [activePresetId, setActivePresetId] = useState<string | null>(null);
   const [compare, setCompare] = useState(false);
   const [dragging, setDragging] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState<string | null>(null); // status text while decoding
   const [exporting, setExporting] = useState(false);
   const [exportFormat, setExportFormat] = useState<ExportFormat>("image/jpeg");
   const [toast, setToast] = useState<{ message: string; kind: "error" | "info" } | null>(null);
@@ -51,15 +54,23 @@ export function Editor() {
   // ----- file handling -----
   const openImage = useCallback(
     async (file: File) => {
-      setLoading(true);
+      const raw = isRawFile(file);
+      setLoading(raw ? "Decoding RAW…" : "Loading…");
       try {
         const max = viewportRef.current?.maxTextureSize ?? 4096;
-        const loaded = await loadImageFile(file, max);
+        const loaded = await loadImageFile(file, max, {
+          onStatus: raw ? (s) => setLoading(s) : undefined,
+        });
         setImage((prev) => {
           prev?.bitmap.close();
           return loaded;
         });
-        if (loaded.width !== loaded.sourceWidth) {
+        if (loaded.raw?.preview) {
+          notify(
+            "Sensor data couldn't be decoded, so the embedded preview is being edited instead.",
+            "info",
+          );
+        } else if (loaded.width !== loaded.sourceWidth) {
           notify(
             `Image downscaled to ${loaded.width}×${loaded.height} to fit this GPU's texture limit.`,
             "info",
@@ -68,7 +79,7 @@ export function Editor() {
       } catch (e) {
         notify(e instanceof Error ? e.message : "Couldn't open that file.");
       } finally {
-        setLoading(false);
+        setLoading(null);
       }
     },
     [notify],
@@ -114,17 +125,26 @@ export function Editor() {
   );
 
   // Window-level drag & drop so a photo can be dropped anywhere.
+  //
+  // Always cancel the default for dragover/drop: if the browser is allowed to
+  // handle a dropped file itself it navigates to it, which for a RAW/DNG means
+  // downloading it. `dataTransfer.types` is not reliable mid-drag in every
+  // browser, so don't gate preventDefault on it — only gate our own handling.
   useEffect(() => {
     let depth = 0;
+    const hasFiles = (e: DragEvent) => {
+      const types = e.dataTransfer?.types;
+      return !!types && (Array.from(types).includes("Files") || types.length === 0);
+    };
     const onEnter = (e: DragEvent) => {
-      if (!e.dataTransfer?.types.includes("Files")) return;
       e.preventDefault();
+      if (!hasFiles(e)) return;
       depth++;
       setDragging(true);
     };
     const onOver = (e: DragEvent) => {
-      if (!e.dataTransfer?.types.includes("Files")) return;
       e.preventDefault();
+      if (e.dataTransfer) e.dataTransfer.dropEffect = hasFiles(e) ? "copy" : "none";
     };
     const onLeave = () => {
       depth = Math.max(0, depth - 1);
@@ -137,15 +157,16 @@ export function Editor() {
       const files = Array.from(e.dataTransfer?.files ?? []);
       if (files.length) handleFiles(files);
     };
-    window.addEventListener("dragenter", onEnter);
-    window.addEventListener("dragover", onOver);
-    window.addEventListener("dragleave", onLeave);
-    window.addEventListener("drop", onDrop);
+    // Capture phase so nothing deeper in the tree can swallow the events.
+    window.addEventListener("dragenter", onEnter, true);
+    window.addEventListener("dragover", onOver, true);
+    window.addEventListener("dragleave", onLeave, true);
+    window.addEventListener("drop", onDrop, true);
     return () => {
-      window.removeEventListener("dragenter", onEnter);
-      window.removeEventListener("dragover", onOver);
-      window.removeEventListener("dragleave", onLeave);
-      window.removeEventListener("drop", onDrop);
+      window.removeEventListener("dragenter", onEnter, true);
+      window.removeEventListener("dragover", onOver, true);
+      window.removeEventListener("dragleave", onLeave, true);
+      window.removeEventListener("drop", onDrop, true);
     };
   }, [handleFiles]);
 
@@ -218,19 +239,30 @@ export function Editor() {
               <span className="text-zinc-200">{image.name}</span>
               <span className="mx-2 text-zinc-600">·</span>
               {image.sourceWidth} × {image.sourceHeight}
-              {loading && <span className="ml-2 text-zinc-500">Loading…</span>}
+              {image.raw && (
+                <>
+                  <span className="mx-2 text-zinc-600">·</span>
+                  <span className="rounded bg-zinc-800 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-zinc-300">
+                    {image.raw.preview ? "RAW preview" : "RAW"}
+                  </span>
+                  {formatRawMetadata(image.raw.metadata) && (
+                    <span className="ml-2 hidden text-zinc-500 md:inline">
+                      {formatRawMetadata(image.raw.metadata)}
+                    </span>
+                  )}
+                </>
+              )}
+              {loading && <span className="ml-2 text-zinc-500">{loading}</span>}
             </>
-          ) : loading ? (
-            "Loading…"
           ) : (
-            "No image open"
+            (loading ?? "No image open")
           )}
         </div>
 
         <input
           ref={fileInputRef}
           type="file"
-          accept="image/*,.xmp"
+          accept={`image/*,.xmp,${RAW_EXTENSIONS.map((e) => `.${e}`).join(",")}`}
           className="hidden"
           onChange={(e) => {
             const files = Array.from(e.target.files ?? []);
@@ -285,10 +317,24 @@ export function Editor() {
             compare={compare}
             onError={notify}
           >
-            {!image && (
+            {!image && !loading && (
               <DropZone active={dragging} onBrowse={() => fileInputRef.current?.click()} />
             )}
-            {image && dragging && (
+            {loading && (
+              <div
+                className={`pointer-events-none absolute inset-0 flex items-center justify-center ${
+                  image ? "bg-zinc-950/40 backdrop-blur-[1px]" : ""
+                }`}
+                role="status"
+                aria-live="polite"
+              >
+                <div className="flex items-center gap-3 rounded-xl border border-zinc-800 bg-zinc-950/90 px-5 py-3 text-sm text-zinc-200 shadow-xl">
+                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-zinc-600 border-t-zinc-200" />
+                  <span>{loading}</span>
+                </div>
+              </div>
+            )}
+            {image && dragging && !loading && (
               <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-sky-500/10 backdrop-blur-[1px]">
                 <div className="rounded-xl border-2 border-dashed border-sky-400 bg-zinc-950/80 px-6 py-4 text-sm text-sky-200">
                   Drop to replace the photo (edits are kept)

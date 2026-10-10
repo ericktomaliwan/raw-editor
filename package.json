@@ -3,12 +3,14 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
+    "dev": "node scripts/copy-libraw.mjs && next dev",
+    "build": "node scripts/copy-libraw.mjs && next build",
+    "postinstall": "node scripts/copy-libraw.mjs",
     "start": "next start",
     "lint": "eslint"
   },
   "dependencies": {
+    "libraw-wasm": "^1.6.0",
     "next": "16.4.0",
     "react": "19.3.0",
     "react-dom": "19.3.0"

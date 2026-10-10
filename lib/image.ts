@@ -1,4 +1,7 @@
-const RAW_EXTENSIONS = [
+import { decodeRawFile, type RawMetadata } from "./raw/decoder";
+
+/** Extensions routed through the LibRaw decoder. */
+export const RAW_EXTENSIONS = [
   "cr2",
   "cr3",
   "nef",
@@ -47,21 +50,47 @@ export interface LoadedImage {
   sourceWidth: number;
   sourceHeight: number;
   name: string;
+  /** Present for RAW/DNG files. */
+  raw?: {
+    metadata: RawMetadata;
+    /** True if only the embedded preview could be decoded. */
+    preview: boolean;
+  };
+}
+
+export interface LoadOptions {
+  /** Progress text for slow (RAW) decodes. */
+  onStatus?: (status: string) => void;
 }
 
 /**
  * Decode a dropped file into an ImageBitmap, honouring EXIF orientation and
- * downscaling if the image exceeds the GPU's max texture size.
+ * downscaling if the image exceeds the GPU's max texture size. RAW/DNG files
+ * are demosaiced with LibRaw in a worker.
  */
 export async function loadImageFile(
   file: File,
   maxSize: number,
+  opts: LoadOptions = {},
 ): Promise<LoadedImage> {
   if (isRawFile(file)) {
-    throw new UnsupportedImageError(
-      `RAW (.${extensionOf(file.name).toUpperCase()}) decoding isn't supported yet. Export a JPEG/TIFF from your camera software for now.`,
-      "raw",
-    );
+    try {
+      const decoded = await decodeRawFile(file, { maxSize, onStatus: opts.onStatus });
+      return {
+        bitmap: decoded.bitmap,
+        width: decoded.width,
+        height: decoded.height,
+        sourceWidth: decoded.width,
+        sourceHeight: decoded.height,
+        name: file.name,
+        raw: { metadata: decoded.metadata, preview: decoded.preview },
+      };
+    } catch (e) {
+      throw new UnsupportedImageError(
+        e instanceof Error ? e.message : `Couldn't decode "${file.name}".`,
+        "raw",
+      );
+    }
   }
   if (!file.type.startsWith("image/") && !looksLikeImage(file.name)) {
     throw new UnsupportedImageError(
