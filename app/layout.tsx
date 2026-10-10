@@ -1,5 +1,6 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import { getSiteUrl, SITE_DESCRIPTION, SITE_NAME, SITE_TAGLINE } from "@/lib/site";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -12,10 +13,57 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+const TITLE = `${SITE_NAME} — ${SITE_TAGLINE}`;
+
 export const metadata: Metadata = {
-  title: "RAW Editor",
-  description:
-    "Browser-based photo editor with professional tone and color adjustments and .xmp preset support. Everything runs locally on your GPU.",
+  metadataBase: getSiteUrl(),
+  title: {
+    default: TITLE,
+    template: `%s · ${SITE_NAME}`,
+  },
+  description: SITE_DESCRIPTION,
+  applicationName: SITE_NAME,
+  keywords: [
+    "RAW editor",
+    "DNG editor",
+    "online photo editor",
+    "browser photo editor",
+    "RAW photo editing",
+    "xmp presets",
+    "white balance",
+    "tone curve",
+    "color grading",
+    "WebGL",
+  ],
+  alternates: { canonical: "/" },
+  openGraph: {
+    type: "website",
+    url: "/",
+    siteName: SITE_NAME,
+    title: TITLE,
+    description: SITE_DESCRIPTION,
+    locale: "en_US",
+    // Image comes from app/opengraph-image.tsx (file convention).
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: TITLE,
+    description: SITE_DESCRIPTION,
+    // Image falls back to the Open Graph image.
+  },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: { index: true, follow: true, "max-image-preview": "large" },
+  },
+  category: "photography",
+};
+
+export const viewport: Viewport = {
+  themeColor: "#09090b",
+  colorScheme: "dark",
+  width: "device-width",
+  initialScale: 1,
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
