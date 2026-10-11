@@ -21,15 +21,9 @@ import { useImportedPresets } from "@/lib/presetStore";
 import { MAX_XMP_BYTES, parseXmpPreset, type Preset } from "@/lib/xmp";
 import { AdjustmentsPanel } from "./AdjustmentsPanel";
 import { DropZone } from "./DropZone";
+import { type ExportFormat, HeaderActions, JPEG_QUALITY_DEFAULT } from "./HeaderActions";
 import { ImageViewport, type ViewportHandle } from "./ImageViewport";
 import { PresetsPanel } from "./PresetsPanel";
-
-type ExportFormat = "image/jpeg" | "image/png" | "image/webp";
-
-/** JPEG export quality, as the familiar 1–100 scale. Lower = smaller file. */
-const JPEG_QUALITY_MIN = 1;
-const JPEG_QUALITY_MAX = 100;
-const JPEG_QUALITY_DEFAULT = 92;
 
 export function Editor() {
   const viewportRef = useRef<ViewportHandle>(null);
@@ -302,43 +296,20 @@ export function Editor() {
             e.target.value = "";
           }}
         />
-        <HeaderButton onClick={() => fileInputRef.current?.click()}>Open</HeaderButton>
-        <HeaderButton
-          disabled={!image}
-          active={compare}
-          onMouseDown={() => setCompare(true)}
-          onMouseUp={() => setCompare(false)}
-          onMouseLeave={() => setCompare(false)}
-          title="Hold to see the original (or press \)"
-        >
-          Before
-        </HeaderButton>
-        <HeaderButton disabled={!edited} onClick={resetAll} title="Reset all adjustments">
-          Reset
-        </HeaderButton>
-        <div className="flex items-stretch overflow-hidden rounded-md border border-zinc-700">
-          <select
-            value={exportFormat}
-            onChange={(e) => setExportFormat(e.target.value as ExportFormat)}
-            className="bg-zinc-900 px-2 text-[11px] text-zinc-300 outline-none"
-            aria-label="Export format"
-          >
-            <option value="image/jpeg">JPEG</option>
-            <option value="image/png">PNG</option>
-            <option value="image/webp">WebP</option>
-          </select>
-          {exportFormat === "image/jpeg" && (
-            <QualityField value={jpegQuality} onCommit={setJpegQuality} />
-          )}
-          <button
-            type="button"
-            disabled={!image || exporting}
-            onClick={exportImage}
-            className="border-l border-zinc-700 bg-zinc-100 px-3 py-1 text-xs font-medium text-zinc-900 hover:bg-white disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            {exporting ? "Exporting…" : "Export"}
-          </button>
-        </div>
+        <HeaderActions
+          hasImage={!!image}
+          edited={edited}
+          compare={compare}
+          exporting={exporting}
+          exportFormat={exportFormat}
+          jpegQuality={jpegQuality}
+          onOpen={() => fileInputRef.current?.click()}
+          onCompareChange={setCompare}
+          onReset={resetAll}
+          onFormatChange={setExportFormat}
+          onQualityChange={setJpegQuality}
+          onExport={exportImage}
+        />
       </header>
 
       {/* Workspace */}
@@ -392,8 +363,16 @@ export function Editor() {
           />
           <AdjustmentsPanel adjustments={adjustments} onChange={updateAdjustments} disabled={!image} />
           <div className="px-4 py-3 text-[11px] leading-relaxed text-zinc-600">
-            Double-click any slider to reset it. Hold <kbd className="rounded border border-zinc-700 px-1">\</kbd>{" "}
-            or the Before button to compare with the original.
+            Double-click any slider to reset it.{" "}
+            {/* The compare control differs by layout: a hold button on wide screens,
+                a menu entry behind the hamburger on phones. */}
+            <span className="hidden md:inline">
+              Hold the Before button or press{" "}
+              <kbd className="rounded border border-zinc-700 px-1">\</kbd> to compare with the original.
+            </span>
+            <span className="md:hidden">
+              Choose Show original in the menu to compare with the original.
+            </span>
           </div>
         </aside>
       </div>
@@ -412,79 +391,5 @@ export function Editor() {
         </div>
       )}
     </div>
-  );
-}
-
-/**
- * JPEG quality entry (1–100). Typing is free-form; the value is committed on
- * blur or Enter, rounded and clamped into range. Anything that isn't a number
- * is discarded and the previous value comes back. Escape cancels the edit.
- */
-function QualityField({
-  value,
-  onCommit,
-}: {
-  value: number;
-  onCommit: (value: number) => void;
-}) {
-  const [draft, setDraft] = useState<string | null>(null);
-  const cancelled = useRef(false);
-  const commit = () => {
-    if (draft !== null && !cancelled.current) {
-      const v = parseFloat(draft);
-      if (Number.isFinite(v)) {
-        onCommit(Math.min(JPEG_QUALITY_MAX, Math.max(JPEG_QUALITY_MIN, Math.round(v))));
-      }
-    }
-    cancelled.current = false;
-    setDraft(null);
-  };
-  const hint = `JPEG quality, ${JPEG_QUALITY_MIN}–${JPEG_QUALITY_MAX}. Lower numbers give a smaller file.`;
-  return (
-    <label
-      className="flex items-center gap-1 border-l border-zinc-700 bg-zinc-900 pl-2 pr-1 text-[11px] text-zinc-500"
-      title={hint}
-    >
-      Quality
-      <input
-        type="text"
-        inputMode="numeric"
-        maxLength={5}
-        className="w-7 bg-transparent text-right tabular-nums text-zinc-200 outline-none focus:text-white"
-        value={draft ?? String(value)}
-        onFocus={(e) => {
-          setDraft(String(value));
-          e.target.select();
-        }}
-        onChange={(e) => setDraft(e.target.value)}
-        onBlur={commit}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") e.currentTarget.blur();
-          if (e.key === "Escape") {
-            cancelled.current = true;
-            e.currentTarget.blur();
-          }
-        }}
-        aria-label={hint}
-      />
-    </label>
-  );
-}
-
-function HeaderButton({
-  active,
-  className = "",
-  ...props
-}: React.ButtonHTMLAttributes<HTMLButtonElement> & { active?: boolean }) {
-  return (
-    <button
-      type="button"
-      {...props}
-      className={`rounded-md border px-3 py-1 text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
-        active
-          ? "border-sky-500/70 bg-sky-500/15 text-white"
-          : "border-zinc-700 text-zinc-300 hover:border-zinc-500 hover:text-white"
-      } ${className}`}
-    />
   );
 }
