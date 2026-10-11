@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useId, useRef, useState } from "react";
 
 export type ExportFormat = "image/jpeg" | "image/png" | "image/webp";
@@ -65,6 +66,7 @@ function InlineActions({
 }: Props) {
   return (
     <>
+      <AboutLink className="px-1 text-xs text-zinc-400 transition-colors hover:text-white" />
       <HeaderButton onClick={onOpen}>Open</HeaderButton>
       <HeaderButton
         disabled={!hasImage}
@@ -266,9 +268,27 @@ function HamburgerMenu({
               {exporting ? "Exporting…" : "Export"}
             </button>
           </div>
+
+          <div className="my-1.5 h-px bg-zinc-800" />
+          <AboutLink
+            onClick={() => setOpen(false)}
+            className="flex w-full items-center rounded-md px-2.5 py-2 text-xs text-zinc-200 hover:bg-zinc-800 focus-visible:bg-zinc-800 focus-visible:outline-none"
+          />
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * Link to the About page. Opens in a new tab on purpose: the photo and edits
+ * live only in this page's memory, so navigating away would discard them.
+ */
+function AboutLink(props: Omit<React.ComponentProps<typeof Link>, "href" | "target" | "children">) {
+  return (
+    <Link href="/about" target="_blank" {...props}>
+      About
+    </Link>
   );
 }
 
