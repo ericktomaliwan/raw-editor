@@ -39,7 +39,7 @@ const FEATURES = [
   "Texture, clarity, dehaze, vibrance and saturation",
   "Tone curve, eight-band color mixer and color grading",
   "Sharpening, vignette, fade and grain",
-  "Import .xmp presets",
+  "Built-in High Detail preset, plus .xmp preset import",
   "Export JPEG, PNG and WebP at full resolution",
 ];
 
@@ -213,8 +213,9 @@ export default function AboutPage() {
               headline="Bring your own presets"
               subheadline={
                 <p>
-                  Import <span className="whitespace-nowrap">.xmp</span> presets one at a time or drop a whole
-                  folder. They stay in your browser, grouped the way the pack organized them.
+                  Start from the built-in High Detail look, or import{" "}
+                  <span className="whitespace-nowrap">.xmp</span> presets one at a time or as a whole folder.
+                  Imported presets stay in your browser, grouped the way the pack organized them.
                 </p>
               }
             />

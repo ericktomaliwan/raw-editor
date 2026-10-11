@@ -18,6 +18,7 @@ import {
 } from "@/lib/image";
 import { formatRawMetadata } from "@/lib/raw/decoder";
 import { useImportedPresets } from "@/lib/presetStore";
+import { BUILTIN_PRESETS } from "@/lib/presets";
 import { MAX_XMP_BYTES, parseXmpPreset, type Preset } from "@/lib/xmp";
 import { AdjustmentsPanel } from "./AdjustmentsPanel";
 import { DropZone } from "./DropZone";
@@ -352,7 +353,7 @@ export function Editor() {
 
         <aside className="min-h-0 overflow-y-auto border-t border-zinc-800 bg-zinc-950 lg:border-l lg:border-t-0">
           <PresetsPanel
-            presets={importedPresets}
+            presets={[...BUILTIN_PRESETS, ...importedPresets]}
             activeId={activePresetId}
             onApply={applyPresetToImage}
             onImportFiles={(files) =>

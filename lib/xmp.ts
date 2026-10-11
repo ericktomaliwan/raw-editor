@@ -11,7 +11,8 @@ export interface Preset {
   name: string;
   group?: string;
   adjustments: Partial<Adjustments>;
-  source: "imported";
+  /** "builtin" ships with the editor (lib/presets.ts); "imported" came from an .xmp file. */
+  source: "imported" | "builtin";
 }
 
 /**

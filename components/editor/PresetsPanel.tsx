@@ -24,14 +24,23 @@ export function PresetsPanel({
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
 
-  // Group by the preset's own group name (carried in the .xmp), in import order.
+  // Built-in presets get their own block at the top. They are kept apart by
+  // source, not by group name, so an imported pack that happens to be called
+  // "Built-in" can't merge into it.
+  const builtin = presets.filter((p) => p.source === "builtin");
+  const imported = presets.filter((p) => p.source !== "builtin");
+
+  // Imported: group by the preset's own group name (carried in the .xmp), in import order.
   const groups = new Map<string, Preset[]>();
-  for (const p of presets) {
+  for (const p of imported) {
     const g = p.group?.trim() || "Imported";
     if (!groups.has(g)) groups.set(g, []);
     groups.get(g)!.push(p);
   }
-  const ordered = [...groups.entries()];
+  const ordered: { key: string; label: string; items: Preset[] }[] = [
+    ...(builtin.length ? [{ key: "builtin", label: "Built-in", items: builtin }] : []),
+    ...[...groups.entries()].map(([label, items]) => ({ key: `imported:${label}`, label, items })),
+  ];
 
   // Actual file handling happens in the window-level drop handler (Editor),
   // which routes .xmp files to the preset importer. This only drives the hover UI.
@@ -72,10 +81,10 @@ export function PresetsPanel({
           dragging ? "bg-sky-500/10 outline outline-1 outline-sky-500/60" : ""
         }`}
       >
-        {ordered.map(([group, items]) => (
-          <div key={group} className="flex flex-col gap-1">
+        {ordered.map(({ key, label, items }) => (
+          <div key={key} className="flex flex-col gap-1">
             <div className="text-[11px] font-medium uppercase tracking-wide text-zinc-500">
-              {group}
+              {label}
             </div>
             <div className="grid grid-cols-2 gap-1">
               {items.map((p) => {
@@ -95,28 +104,31 @@ export function PresetsPanel({
                     >
                       {p.name}
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => onRemove(p.id)}
-                      className="absolute -right-1 -top-1 hidden h-4 w-4 items-center justify-center rounded-full bg-zinc-700 text-[10px] text-zinc-200 hover:bg-red-600 group-hover/preset:flex"
-                      title="Remove preset"
-                      aria-label={`Remove ${p.name}`}
-                    >
-                      ×
-                    </button>
+                    {/* Only the user's own presets can be removed. */}
+                    {p.source === "imported" && (
+                      <button
+                        type="button"
+                        onClick={() => onRemove(p.id)}
+                        className="absolute -right-1 -top-1 hidden h-4 w-4 items-center justify-center rounded-full bg-zinc-700 text-[10px] text-zinc-200 hover:bg-red-600 group-hover/preset:flex"
+                        title="Remove preset"
+                        aria-label={`Remove ${p.name}`}
+                      >
+                        ×
+                      </button>
+                    )}
                   </div>
                 );
               })}
             </div>
           </div>
         ))}
-        {presets.length === 0 ? (
+        {imported.length === 0 ? (
           <button
             type="button"
             onClick={() => inputRef.current?.click()}
             className="rounded-md border border-dashed border-zinc-800 px-3 py-4 text-center text-[11px] leading-relaxed text-zinc-500 hover:border-zinc-600 hover:text-zinc-300"
           >
-            No presets yet. Drop <span className="text-zinc-400">.xmp</span> files or a folder
+            Add your own. Drop <span className="text-zinc-400">.xmp</span> files or a folder
             here, or click to import.
           </button>
         ) : (

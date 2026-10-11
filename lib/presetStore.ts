@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from "react";
 import { sanitizeAdjustments } from "./adjustments";
+import { BUILTIN_ID_PREFIX } from "./presets";
 import { cleanLabel, type Preset } from "./xmp";
 
 /**
@@ -28,6 +29,8 @@ function parseStored(raw: string): Preset[] {
     if (typeof item !== "object" || item === null) continue;
     const { id, name, group, adjustments } = item as Record<string, unknown>;
     if (typeof id !== "string" || !id || id.length > 100 || seen.has(id)) continue;
+    // Ids in that namespace belong to the presets shipped in lib/presets.ts.
+    if (id.startsWith(BUILTIN_ID_PREFIX)) continue;
     const cleanName = typeof name === "string" ? cleanLabel(name) : "";
     if (!cleanName) continue;
     seen.add(id);
