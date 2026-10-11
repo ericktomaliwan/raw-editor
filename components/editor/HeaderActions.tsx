@@ -12,7 +12,7 @@ export const JPEG_QUALITY_DEFAULT = 92;
 
 interface Props {
   hasImage: boolean;
-  /** Any adjustment differs from its default. */
+  /** Something Reset would undo: an adjustment differs from its default, or the photo is cropped. */
   edited: boolean;
   /** The original (unedited) image is currently being shown. */
   compare: boolean;
@@ -78,7 +78,7 @@ function InlineActions({
       >
         Before
       </HeaderButton>
-      <HeaderButton disabled={!edited} onClick={onReset} title="Reset all adjustments">
+      <HeaderButton disabled={!edited} onClick={onReset} title="Reset all edits, including the crop">
         Reset
       </HeaderButton>
       <div className="flex items-stretch overflow-hidden rounded-md border border-zinc-700">
@@ -234,7 +234,7 @@ function HamburgerMenu({
             Show original
           </MenuItem>
           <MenuItem disabled={!edited} onClick={act(onReset)}>
-            Reset all adjustments
+            Reset all edits
           </MenuItem>
 
           <div className="my-1.5 h-px bg-zinc-800" />

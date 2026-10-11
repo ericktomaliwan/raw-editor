@@ -47,8 +47,8 @@ export function Editor() {
   const [activePresetId, setActivePresetId] = useState<string | null>(null);
   const [compare, setCompare] = useState(false);
   // Crop, in pixels of the working image; null = the whole image. Kept apart
-  // from `adjustments` on purpose: presets and "Reset" replace the adjustments
-  // wholesale, and neither should throw away a crop.
+  // from `adjustments` on purpose: a preset replaces the adjustments wholesale
+  // and must not throw away a crop. (The nav's Reset clears both explicitly.)
   const [crop, setCrop] = useState<CropRect | null>(null);
   const [cropping, setCropping] = useState(false);
   const [aspect, setAspect] = useState<AspectChoice>(FREE_ASPECT);
@@ -225,9 +225,13 @@ export function Editor() {
     setAdjustments((prev) => ({ ...prev, ...patch }));
     setActivePresetId(null);
   };
+  /** The nav's Reset: back to the photo as it was opened, crop included. */
   const resetAll = () => {
     setAdjustments(createDefaultAdjustments());
     setActivePresetId(null);
+    setCrop(null);
+    setCropping(false);
+    setAspect(FREE_ASPECT);
   };
   const applyPresetToImage = (preset: Preset) => {
     // Presets are applied on a clean slate rather than stacked on current edits.
@@ -319,7 +323,8 @@ export function Editor() {
     }
   };
 
-  const edited = !isDefault(adjustments);
+  // Anything the nav's Reset would undo: a changed slider or a crop.
+  const edited = !isDefault(adjustments) || crop !== null;
 
   return (
     <div className="flex h-dvh flex-col bg-zinc-950 text-zinc-200">

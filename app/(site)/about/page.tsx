@@ -166,6 +166,43 @@ export default function AboutPage() {
         }
       />
 
+      {/* Why build this. Uses the heading + description + three cards layout;
+          here the cards hold short situations instead of figures. */}
+      <StatsThreeColumnWithDescription
+        id="why"
+        heading="Why build this?"
+        description={
+          <>
+            <p>
+              {SITE_NAME} is for people who have a few RAW files and want to edit them without installing
+              an app.
+            </p>
+            <p>
+              Most RAW editors are built for photographers with thousands of photos. They expect an
+              install, an account, and a library to import into before you can move a single slider. That
+              is a lot of ceremony for a handful of files.
+            </p>
+            <p>
+              So this one skips all of it. Open the page, drop in a photo, make it look the way you
+              remember it, and export.
+            </p>
+          </>
+        }
+      >
+        <Stat
+          stat="A few keepers"
+          text="You're back from a trip or a shoot with a handful of photos worth finishing, and setting up a library for five files feels like overkill."
+        />
+        <Stat
+          stat="A borrowed computer"
+          text="You're on a work laptop or a friend's machine, where you can't install software or would rather not."
+        />
+        <Stat
+          stat="New to RAW"
+          text="You're curious what your camera's RAW files look like and how the sliders behave, before committing to a bigger tool."
+        />
+      </StatsThreeColumnWithDescription>
+
       {/* What it does */}
       <FeaturesThreeColumn
         id="features"
