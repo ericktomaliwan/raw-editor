@@ -1,9 +1,12 @@
 export const VERTEX_SHADER = /* glsl */ `#version 300 es
 out vec2 v_uv;
+// The part of the image this render shows, as (x, y, width, height) in uv:
+// the whole image while the crop is being edited, otherwise the crop itself.
+uniform vec4 u_view;
 void main() {
   // Full-screen triangle; flip Y so uv (0,0) is the top-left of the image.
   vec2 pos = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2);
-  v_uv = vec2(pos.x, 1.0 - pos.y);
+  v_uv = u_view.xy + vec2(pos.x, 1.0 - pos.y) * u_view.zw;
   gl_Position = vec4(pos * 2.0 - 1.0, 0.0, 1.0);
 }
 `;
@@ -17,9 +20,10 @@ out vec4 outColor;
 uniform sampler2D u_image;
 uniform sampler2D u_curve;   // 256x1 RGBA: r,g,b per-channel curves, a = composite
 uniform vec2  u_texel;        // 1 / image size
-uniform vec2  u_outTexel;     // 1 / output (canvas) size, in uv
+uniform vec2  u_outTexel;     // one output (canvas) pixel, in image uv
 uniform float u_baseLod;      // mip level the output is sampled at (log2 of downscale)
-uniform float u_aspect;       // width / height
+uniform vec4  u_cropRect;     // the crop in uv (x, y, w, h); the vignette is centred on it
+uniform float u_aspect;       // crop width / height, in pixels
 uniform float u_bypass;       // 1 = show original
 uniform float u_hasCurve;
 
@@ -288,7 +292,11 @@ vec3 sharpen(vec3 c, vec3 src) {
 
 vec3 vignette(vec3 c) {
   if (u_vignette == 0.0) return c;
-  vec2 p = (v_uv - 0.5) * vec2(u_aspect, 1.0) / max(u_aspect, 1.0) * 2.0;
+  // Position within the crop (0..1), not within the image: the vignette frames
+  // the picture you keep. This also holds while the crop is being edited and
+  // the whole image is on screen.
+  vec2 q = (v_uv - u_cropRect.xy) / u_cropRect.zw;
+  vec2 p = (q - 0.5) * vec2(u_aspect, 1.0) / max(u_aspect, 1.0) * 2.0;
   float d = length(p);
   float v = smoothstep(0.45, 1.35, d);
   float amt = u_vignette > 0.0 ? u_vignette * 0.9 : u_vignette;

@@ -39,6 +39,7 @@ const FEATURES = [
   "Texture, clarity, dehaze, vibrance and saturation",
   "Tone curve, eight-band color mixer and color grading",
   "Sharpening, vignette, fade and grain",
+  "Crop with aspect ratio presets",
   "Built-in High Detail preset, plus .xmp preset import",
   "Export JPEG, PNG and WebP at full resolution",
 ];
@@ -194,7 +195,8 @@ export default function AboutPage() {
               subheadline={
                 <p>
                   White balance, exposure, highlights and shadows, texture, clarity and dehaze, a tone curve, an
-                  eight-band color mixer, color grading, calibration, sharpening, vignette, fade and grain.
+                  eight-band color mixer, color grading, calibration, sharpening, vignette, fade and grain, plus a
+                  crop tool with the common aspect ratios.
                 </p>
               }
             />

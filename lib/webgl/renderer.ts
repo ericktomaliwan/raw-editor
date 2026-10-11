@@ -1,5 +1,6 @@
 import { type Adjustments, HSL_CHANNELS } from "../adjustments";
 import { calibrationMatrix } from "../calibration";
+import type { CropRect } from "../crop";
 import { buildCurveTexture, hasPointCurve, LUT_SIZE } from "../curve";
 import { FRAGMENT_SHADER, VERTEX_SHADER } from "./shaders";
 
@@ -9,6 +10,17 @@ export interface RenderOptions {
   height?: number;
   /** Show the untouched source image. */
   bypass?: boolean;
+  /**
+   * The part of the image to draw, in image pixels. Defaults to all of it.
+   * Pass the crop to render the cropped picture (display or export).
+   */
+  view?: CropRect;
+  /**
+   * The crop in effect, when it differs from `view` (i.e. while the crop is
+   * being edited and the whole image is shown). Crop-relative effects such as
+   * the vignette use this. Defaults to `view`.
+   */
+  crop?: CropRect;
 }
 
 /**
@@ -115,7 +127,9 @@ export class Renderer {
     gl.bindTexture(gl.TEXTURE_2D, this.curveTex);
     this.uploadCurveIfChanged(adj);
 
-    this.setUniforms(adj, opts.bypass ?? false, width, height);
+    const whole: CropRect = { x: 0, y: 0, width: this.imageWidth, height: this.imageHeight };
+    const view = opts.view ?? whole;
+    this.setUniforms(adj, opts.bypass ?? false, width, height, view, opts.crop ?? view);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
   }
 
@@ -175,17 +189,29 @@ export class Renderer {
     );
   }
 
-  private setUniforms(a: Adjustments, bypass: boolean, outW: number, outH: number) {
+  private setUniforms(
+    a: Adjustments,
+    bypass: boolean,
+    outW: number,
+    outH: number,
+    view: CropRect,
+    crop: CropRect,
+  ) {
     const gl = this.gl;
     const f = (name: string, v: number) => gl.uniform1f(this.loc(name), v);
     const n = (v: number) => v / 100;
 
-    gl.uniform2f(this.loc("u_texel"), 1 / this.imageWidth, 1 / this.imageHeight);
-    gl.uniform2f(this.loc("u_outTexel"), 1 / outW, 1 / outH);
+    const iw = this.imageWidth;
+    const ih = this.imageHeight;
+    gl.uniform2f(this.loc("u_texel"), 1 / iw, 1 / ih);
+    gl.uniform4f(this.loc("u_view"), view.x / iw, view.y / ih, view.width / iw, view.height / ih);
+    gl.uniform4f(this.loc("u_cropRect"), crop.x / iw, crop.y / ih, crop.width / iw, crop.height / ih);
+    // One output pixel expressed in image uv: the view is what gets stretched over the output.
+    gl.uniform2f(this.loc("u_outTexel"), view.width / iw / outW, view.height / ih / outH);
     // Mip level the GPU is already sampling the source at for this output size.
-    const downscale = Math.max(this.imageWidth / outW, this.imageHeight / outH, 1);
+    const downscale = Math.max(view.width / outW, view.height / outH, 1);
     f("u_baseLod", Math.log2(downscale));
-    f("u_aspect", this.imageWidth / this.imageHeight);
+    f("u_aspect", crop.width / crop.height);
     f("u_bypass", bypass ? 1 : 0);
     f("u_hasCurve", hasPointCurve(a) ? 1 : 0);
 

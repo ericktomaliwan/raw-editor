@@ -9,9 +9,11 @@ import {
   useState,
 } from "react";
 import type { Adjustments } from "@/lib/adjustments";
+import { type CropRect, fullRect } from "@/lib/crop";
 import type { LoadedImage } from "@/lib/image";
 import { encodeJpeg } from "@/lib/jpeg/encoder";
 import { Renderer } from "@/lib/webgl/renderer";
+import { CropOverlay } from "./CropOverlay";
 
 export interface ExportResult {
   blob: Blob;
@@ -25,8 +27,9 @@ export interface ExportResult {
 export interface ViewportHandle {
   maxTextureSize: number;
   /**
-   * Render at full image resolution and encode. `quality` is 0..1.
-   * JPEGs go through MozJPEG, with the browser's encoder as the fallback.
+   * Render at full resolution (of the crop, if there is one) and encode.
+   * `quality` is 0..1. JPEGs go through MozJPEG, with the browser's encoder
+   * as the fallback.
    */
   exportBlob(type: string, quality?: number): Promise<ExportResult>;
 }
@@ -36,11 +39,29 @@ interface Props {
   image: LoadedImage | null;
   adjustments: Adjustments;
   compare: boolean;
+  /** The crop in image pixels, or null for the whole image. */
+  crop: CropRect | null;
+  /** True while the crop is being edited: show the whole image with the crop box on it. */
+  cropping: boolean;
+  /** Width / height the crop box must keep, or null for a free crop. */
+  cropRatio: number | null;
+  onCropChange: (rect: CropRect) => void;
   onError: (message: string) => void;
   children?: React.ReactNode; // empty-state overlay
 }
 
-export function ImageViewport({ ref, image, adjustments, compare, onError, children }: Props) {
+export function ImageViewport({
+  ref,
+  image,
+  adjustments,
+  compare,
+  crop,
+  cropping,
+  cropRatio,
+  onCropChange,
+  onError,
+  children,
+}: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const rendererRef = useRef<Renderer | null>(null);
@@ -85,21 +106,36 @@ export function ImageViewport({ ref, image, adjustments, compare, onError, child
     }
   }, [image, onError]);
 
+  // What the canvas shows: the crop normally, the whole image while cropping
+  // (so the box can be dragged over the parts that will be cut off).
+  const whole = fullRect(image?.width ?? 0, image?.height ?? 0);
+  const cropRect = crop ?? whole;
+  const view = cropping ? whole : cropRect;
+  // Rects are rebuilt each render; key effects on their numbers, not their identity.
+  const { x: viewX, y: viewY, width: viewW, height: viewH } = view;
+  const { x: cropX, y: cropY, width: cropW, height: cropH } = cropRect;
+
   // Compute the display size that fits the container.
-  const fit = fitSize(image?.width ?? 0, image?.height ?? 0, container.w, container.h);
+  const fit = fitSize(viewW, viewH, container.w, container.h);
   const dpr = typeof window !== "undefined" ? Math.min(window.devicePixelRatio || 1, 3) : 1;
-  const pixelW = image ? Math.min(Math.round(fit.w * dpr), image.width) : 0;
-  const pixelH = image ? Math.min(Math.round(fit.h * dpr), image.height) : 0;
+  const pixelW = image ? Math.min(Math.round(fit.w * dpr), viewW) : 0;
+  const pixelH = image ? Math.min(Math.round(fit.h * dpr), viewH) : 0;
 
   // Re-render whenever anything relevant changes (coalesced per frame).
   useEffect(() => {
     const r = rendererRef.current;
     if (!r || !image || pixelW === 0 || pixelH === 0) return;
     const id = requestAnimationFrame(() => {
-      r.render(adjustments, { width: pixelW, height: pixelH, bypass: compare });
+      r.render(adjustments, {
+        width: pixelW,
+        height: pixelH,
+        bypass: compare,
+        view: { x: viewX, y: viewY, width: viewW, height: viewH },
+        crop: { x: cropX, y: cropY, width: cropW, height: cropH },
+      });
     });
     return () => cancelAnimationFrame(id);
-  }, [adjustments, compare, image, pixelW, pixelH]);
+  }, [adjustments, compare, image, pixelW, pixelH, viewX, viewY, viewW, viewH, cropX, cropY, cropW, cropH]);
 
   useImperativeHandle(
     ref,
@@ -111,8 +147,17 @@ export function ImageViewport({ ref, image, adjustments, compare, onError, child
         const r = rendererRef.current;
         const canvas = canvasRef.current;
         if (!r || !canvas || !image) throw new Error("No image to export.");
-        const full = { width: image.width, height: image.height };
-        const restore = () => r.render(adjustments, { width: pixelW, height: pixelH, bypass: compare });
+        // The exported picture is the crop, at one output pixel per image pixel.
+        const output: CropRect = { x: cropX, y: cropY, width: cropW, height: cropH };
+        const full = { width: cropW, height: cropH, view: output, crop: output };
+        const restore = () =>
+          r.render(adjustments, {
+            width: pixelW,
+            height: pixelH,
+            bypass: compare,
+            view: { x: viewX, y: viewY, width: viewW, height: viewH },
+            crop: output,
+          });
         const builtIn = () =>
           new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, type, quality));
 
@@ -151,7 +196,7 @@ export function ImageViewport({ ref, image, adjustments, compare, onError, child
         return { blob, usedBuiltInJpegEncoder };
       },
     }),
-    [image, adjustments, pixelW, pixelH, compare],
+    [image, adjustments, pixelW, pixelH, compare, viewX, viewY, viewW, viewH, cropX, cropY, cropW, cropH],
   );
 
   return (
@@ -159,13 +204,22 @@ export function ImageViewport({ ref, image, adjustments, compare, onError, child
       ref={containerRef}
       className="relative flex h-full w-full items-center justify-center overflow-hidden"
     >
-      <canvas
-        ref={canvasRef}
-        className={`block max-h-full max-w-full shadow-2xl shadow-black/60 ${
-          image ? "" : "hidden"
-        }`}
+      {/* Sized to the displayed image, so the crop overlay can sit exactly on top of it. */}
+      <div
+        className={`relative shrink-0 shadow-2xl shadow-black/60 ${image ? "" : "hidden"}`}
         style={{ width: fit.w, height: fit.h }}
-      />
+      >
+        <canvas ref={canvasRef} className={`block h-full w-full ${image ? "" : "hidden"}`} />
+        {image && cropping && (
+          <CropOverlay
+            imageWidth={image.width}
+            imageHeight={image.height}
+            rect={cropRect}
+            ratio={cropRatio}
+            onChange={onCropChange}
+          />
+        )}
+      </div>
       {image && compare && (
         <div className="pointer-events-none absolute left-3 top-3 rounded bg-black/70 px-2 py-1 text-[11px] font-medium uppercase tracking-wide text-zinc-200">
           Before

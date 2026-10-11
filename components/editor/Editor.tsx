@@ -7,6 +7,15 @@ import {
   createDefaultAdjustments,
   isDefault,
 } from "@/lib/adjustments";
+import {
+  applyAspect,
+  type AspectChoice,
+  type CropRect,
+  FREE_ASPECT,
+  fullRect,
+  isFullRect,
+  resolveAspect,
+} from "@/lib/crop";
 import { collectDroppedFiles, type DroppedFile } from "@/lib/dropFiles";
 import {
   isRawFile,
@@ -21,6 +30,7 @@ import { useImportedPresets } from "@/lib/presetStore";
 import { BUILTIN_PRESETS } from "@/lib/presets";
 import { MAX_XMP_BYTES, parseXmpPreset, type Preset } from "@/lib/xmp";
 import { AdjustmentsPanel } from "./AdjustmentsPanel";
+import { CropPanel } from "./CropPanel";
 import { DropZone } from "./DropZone";
 import { type ExportFormat, HeaderActions, JPEG_QUALITY_DEFAULT } from "./HeaderActions";
 import { ImageViewport, type ViewportHandle } from "./ImageViewport";
@@ -36,6 +46,14 @@ export function Editor() {
   const [importedPresets, persistPresets] = useImportedPresets();
   const [activePresetId, setActivePresetId] = useState<string | null>(null);
   const [compare, setCompare] = useState(false);
+  // Crop, in pixels of the working image; null = the whole image. Kept apart
+  // from `adjustments` on purpose: presets and "Reset" replace the adjustments
+  // wholesale, and neither should throw away a crop.
+  const [crop, setCrop] = useState<CropRect | null>(null);
+  const [cropping, setCropping] = useState(false);
+  const [aspect, setAspect] = useState<AspectChoice>(FREE_ASPECT);
+  /** The crop as it was when cropping started, for Cancel / Escape. */
+  const cropAtEntry = useRef<CropRect | null>(null);
   const [dragging, setDragging] = useState(false);
   const [loading, setLoading] = useState<string | null>(null); // status text while decoding
   const [exporting, setExporting] = useState(false);
@@ -67,6 +85,10 @@ export function Editor() {
           prev?.bitmap.close();
           return loaded;
         });
+        // A crop is in pixels of the photo it was made on; it doesn't carry over.
+        setCrop(null);
+        setCropping(false);
+        setAspect(FREE_ASPECT);
         if (loaded.raw?.preview) {
           notify(
             "Sensor data couldn't be decoded, so the embedded preview is being edited instead.",
@@ -213,6 +235,56 @@ export function Editor() {
     setActivePresetId(preset.id);
   };
 
+  // ----- crop -----
+  const cropRatio = image ? resolveAspect(aspect, image.width, image.height) : null;
+  const changeCrop = (rect: CropRect) => {
+    if (!image) return;
+    setCrop(isFullRect(rect, image.width, image.height) ? null : rect);
+  };
+  const startCrop = () => {
+    if (!image || cropping) return;
+    cropAtEntry.current = crop;
+    setCropping(true);
+  };
+  const cancelCrop = () => {
+    setCrop(cropAtEntry.current);
+    setCropping(false);
+  };
+  const resetCrop = () => {
+    setCrop(null);
+    setAspect(FREE_ASPECT);
+  };
+  const chooseAspect = (choice: AspectChoice) => {
+    setAspect(choice);
+    if (!image) return;
+    // Picking a shape is a request to crop: show the box if it isn't up yet.
+    startCrop();
+    const ratio = resolveAspect(choice, image.width, image.height);
+    if (ratio !== null) {
+      const current = crop ?? fullRect(image.width, image.height);
+      changeCrop(applyAspect(current, ratio, image.width, image.height));
+    }
+  };
+
+  // While cropping: Enter finishes, Escape puts the crop back as it was.
+  useEffect(() => {
+    if (!cropping) return;
+    const onKey = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement | null)?.tagName ?? "";
+      if (["INPUT", "TEXTAREA", "SELECT"].includes(tag)) return;
+      if (e.key === "Escape") {
+        setCrop(cropAtEntry.current);
+        setCropping(false);
+      } else if (e.key === "Enter" && tag !== "BUTTON" && tag !== "A") {
+        // (On a button or link, Enter belongs to that control.)
+        e.preventDefault();
+        setCropping(false);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [cropping]);
+
   // ----- export -----
   const exportImage = async () => {
     if (!image || !viewportRef.current) return;
@@ -322,6 +394,10 @@ export function Editor() {
             image={image}
             adjustments={adjustments}
             compare={compare}
+            crop={crop}
+            cropping={cropping}
+            cropRatio={cropRatio}
+            onCropChange={changeCrop}
             onError={notify}
           >
             {!image && !loading && (
@@ -361,6 +437,22 @@ export function Editor() {
             }
             onRemove={(id) => persistPresets((prev) => prev.filter((p) => p.id !== id))}
             disabled={!image}
+          />
+          <CropPanel
+            disabled={!image}
+            cropping={cropping}
+            cropped={crop !== null}
+            size={
+              image
+                ? { width: crop?.width ?? image.width, height: crop?.height ?? image.height }
+                : null
+            }
+            aspect={aspect}
+            onStart={startCrop}
+            onDone={() => setCropping(false)}
+            onCancel={cancelCrop}
+            onReset={resetCrop}
+            onAspectChange={chooseAspect}
           />
           <AdjustmentsPanel adjustments={adjustments} onChange={updateAdjustments} disabled={!image} />
           <div className="px-4 py-3 text-[11px] leading-relaxed text-zinc-600">
