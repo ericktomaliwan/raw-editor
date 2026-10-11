@@ -28,6 +28,7 @@ import {
 import { formatRawMetadata } from "@/lib/raw/decoder";
 import { useImportedPresets } from "@/lib/presetStore";
 import { BUILTIN_PRESETS } from "@/lib/presets";
+import { useEditHistory } from "@/lib/useEditHistory";
 import { MAX_XMP_BYTES, parseXmpPreset, type Preset } from "@/lib/xmp";
 import { AdjustmentsPanel } from "./AdjustmentsPanel";
 import { CropPanel } from "./CropPanel";
@@ -36,22 +37,30 @@ import { type ExportFormat, HeaderActions, JPEG_QUALITY_DEFAULT } from "./Header
 import { ImageViewport, type ViewportHandle } from "./ImageViewport";
 import { PresetsPanel } from "./PresetsPanel";
 
+/** Input types that hold no text, so Cmd/Ctrl+Z on them can mean "undo the edit". */
+const NON_TEXT_INPUTS = new Set(["range", "checkbox", "radio", "button", "submit", "reset", "file", "color"]);
+
 export function Editor() {
   const viewportRef = useRef<ViewportHandle>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const builtInJpegNoticeShown = useRef(false);
 
   const [image, setImage] = useState<LoadedImage | null>(null);
-  const [adjustments, setAdjustments] = useState<Adjustments>(createDefaultAdjustments);
+  // The edit itself (adjustments, active preset, crop, crop ratio) lives in an
+  // undo/redo history; every change goes through `apply`. The crop is its own
+  // field, apart from `adjustments`, on purpose: a preset replaces the
+  // adjustments wholesale and must not throw away a crop. (The nav's Reset
+  // clears both explicitly.)
+  const { edit, apply, restart, undo, redo } = useEditHistory(() => ({
+    adjustments: createDefaultAdjustments(),
+    activePresetId: null,
+    crop: null, // in pixels of the working image; null = the whole image
+    aspect: FREE_ASPECT,
+  }));
+  const { adjustments, activePresetId, crop, aspect } = edit;
   const [importedPresets, persistPresets] = useImportedPresets();
-  const [activePresetId, setActivePresetId] = useState<string | null>(null);
   const [compare, setCompare] = useState(false);
-  // Crop, in pixels of the working image; null = the whole image. Kept apart
-  // from `adjustments` on purpose: a preset replaces the adjustments wholesale
-  // and must not throw away a crop. (The nav's Reset clears both explicitly.)
-  const [crop, setCrop] = useState<CropRect | null>(null);
   const [cropping, setCropping] = useState(false);
-  const [aspect, setAspect] = useState<AspectChoice>(FREE_ASPECT);
   /** The crop as it was when cropping started, for Cancel / Escape. */
   const cropAtEntry = useRef<CropRect | null>(null);
   const [dragging, setDragging] = useState(false);
@@ -85,10 +94,11 @@ export function Editor() {
           prev?.bitmap.close();
           return loaded;
         });
-        // A crop is in pixels of the photo it was made on; it doesn't carry over.
-        setCrop(null);
+        // The adjustments carry over to the new photo, but a crop is in pixels of
+        // the photo it was made on, so it doesn't. Undo history starts over too:
+        // its earlier steps hold crops that belong to the previous photo.
+        restart((prev) => ({ ...prev, crop: null, aspect: FREE_ASPECT }));
         setCropping(false);
-        setAspect(FREE_ASPECT);
         if (loaded.raw?.preview) {
           notify(
             "Sensor data couldn't be decoded, so the embedded preview is being edited instead.",
@@ -106,7 +116,7 @@ export function Editor() {
         setLoading(null);
       }
     },
-    [notify],
+    [notify, restart],
   );
 
   const importPresetFiles = useCallback(
@@ -222,28 +232,39 @@ export function Editor() {
 
   // ----- adjustments -----
   const updateAdjustments = (patch: Partial<Adjustments>) => {
-    setAdjustments((prev) => ({ ...prev, ...patch }));
-    setActivePresetId(null);
+    apply(
+      (prev) => ({ ...prev, adjustments: { ...prev.adjustments, ...patch }, activePresetId: null }),
+      // Keyed by which settings changed, so dragging one slider is one undo
+      // step, and moving on to another slider starts the next.
+      `adjust:${Object.keys(patch).sort().join(",")}`,
+    );
   };
   /** The nav's Reset: back to the photo as it was opened, crop included. */
   const resetAll = () => {
-    setAdjustments(createDefaultAdjustments());
-    setActivePresetId(null);
-    setCrop(null);
+    apply(() => ({
+      adjustments: createDefaultAdjustments(),
+      activePresetId: null,
+      crop: null,
+      aspect: FREE_ASPECT,
+    }));
     setCropping(false);
-    setAspect(FREE_ASPECT);
   };
   const applyPresetToImage = (preset: Preset) => {
     // Presets are applied on a clean slate rather than stacked on current edits.
-    setAdjustments(applyPreset(createDefaultAdjustments(), preset.adjustments));
-    setActivePresetId(preset.id);
+    apply((prev) => ({
+      ...prev,
+      adjustments: applyPreset(createDefaultAdjustments(), preset.adjustments),
+      activePresetId: preset.id,
+    }));
   };
 
   // ----- crop -----
   const cropRatio = image ? resolveAspect(aspect, image.width, image.height) : null;
   const changeCrop = (rect: CropRect) => {
     if (!image) return;
-    setCrop(isFullRect(rect, image.width, image.height) ? null : rect);
+    const next = isFullRect(rect, image.width, image.height) ? null : rect;
+    // Keyed so one drag of the crop box is one undo step.
+    apply((prev) => ({ ...prev, crop: next }), "crop");
   };
   const startCrop = () => {
     if (!image || cropping) return;
@@ -251,23 +272,28 @@ export function Editor() {
     setCropping(true);
   };
   const cancelCrop = () => {
-    setCrop(cropAtEntry.current);
+    const entry = cropAtEntry.current; // read here: `apply` callbacks must not touch refs
+    apply((prev) => ({ ...prev, crop: entry }));
     setCropping(false);
   };
   const resetCrop = () => {
-    setCrop(null);
-    setAspect(FREE_ASPECT);
+    apply((prev) => ({ ...prev, crop: null, aspect: FREE_ASPECT }));
   };
   const chooseAspect = (choice: AspectChoice) => {
-    setAspect(choice);
-    if (!image) return;
+    if (!image) {
+      apply((prev) => ({ ...prev, aspect: choice }));
+      return;
+    }
     // Picking a shape is a request to crop: show the box if it isn't up yet.
     startCrop();
-    const ratio = resolveAspect(choice, image.width, image.height);
-    if (ratio !== null) {
-      const current = crop ?? fullRect(image.width, image.height);
-      changeCrop(applyAspect(current, ratio, image.width, image.height));
-    }
+    const { width, height } = image;
+    const ratio = resolveAspect(choice, width, height);
+    // The ratio and the reshaped crop change together, as a single undo step.
+    apply((prev) => {
+      if (ratio === null) return { ...prev, aspect: choice };
+      const reshaped = applyAspect(prev.crop ?? fullRect(width, height), ratio, width, height);
+      return { ...prev, aspect: choice, crop: isFullRect(reshaped, width, height) ? null : reshaped };
+    });
   };
 
   // While cropping: Enter finishes, Escape puts the crop back as it was.
@@ -277,7 +303,8 @@ export function Editor() {
       const tag = (e.target as HTMLElement | null)?.tagName ?? "";
       if (["INPUT", "TEXTAREA", "SELECT"].includes(tag)) return;
       if (e.key === "Escape") {
-        setCrop(cropAtEntry.current);
+        const entry = cropAtEntry.current;
+        apply((prev) => ({ ...prev, crop: entry }));
         setCropping(false);
       } else if (e.key === "Enter" && tag !== "BUTTON" && tag !== "A") {
         // (On a button or link, Enter belongs to that control.)
@@ -287,7 +314,29 @@ export function Editor() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [cropping]);
+  }, [cropping, apply]);
+
+  // Undo / redo: Cmd+Z and Cmd+Shift+Z on a Mac, Ctrl+Z and Ctrl+Y (or
+  // Ctrl+Shift+Z) elsewhere.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.altKey) return;
+      const key = e.key.toLowerCase();
+      const isUndo = key === "z" && !e.shiftKey;
+      const isRedo = (key === "z" && e.shiftKey) || (key === "y" && e.ctrlKey && !e.metaKey);
+      if (!isUndo && !isRedo) return;
+      // While typing in a text field, the shortcut belongs to the field: it
+      // undoes the typing. (Sliders are inputs too, but not text ones.)
+      const t = e.target;
+      if (t instanceof HTMLTextAreaElement || (t instanceof HTMLElement && t.isContentEditable)) return;
+      if (t instanceof HTMLInputElement && !NON_TEXT_INPUTS.has(t.type)) return;
+      e.preventDefault();
+      if (isUndo) undo();
+      else redo();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [undo, redo]);
 
   // ----- export -----
   const exportImage = async () => {
@@ -467,6 +516,8 @@ export function Editor() {
             <span className="hidden md:inline">
               Hold the Before button or press{" "}
               <kbd className="rounded border border-zinc-700 px-1">\</kbd> to compare with the original.
+              Undo with <kbd className="rounded border border-zinc-700 px-1">⌘Z</kbd> or{" "}
+              <kbd className="rounded border border-zinc-700 px-1">Ctrl+Z</kbd>.
             </span>
             <span className="md:hidden">
               Choose Show original in the menu to compare with the original.
