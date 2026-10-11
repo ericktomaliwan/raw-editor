@@ -38,7 +38,7 @@ const FEATURES = [
   "White balance, exposure, highlights, shadows, whites and blacks",
   "Texture, clarity, dehaze, vibrance and saturation",
   "Tone curve, eight-band color mixer and color grading",
-  "Sharpening, vignette and grain",
+  "Sharpening, vignette, fade and grain",
   "Import .xmp presets",
   "Export JPEG, PNG and WebP at full resolution",
 ];
@@ -194,7 +194,7 @@ export default function AboutPage() {
               subheadline={
                 <p>
                   White balance, exposure, highlights and shadows, texture, clarity and dehaze, a tone curve, an
-                  eight-band color mixer, color grading, calibration, sharpening, vignette and grain.
+                  eight-band color mixer, color grading, calibration, sharpening, vignette, fade and grain.
                 </p>
               }
             />

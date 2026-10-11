@@ -84,6 +84,7 @@ export interface Adjustments {
   sharpness: number; // 0..150
   // Effects
   vignette: number; // -100..100
+  fade: number; // 0..100, matte look: lifted blacks, softened whites
   grain: number; // 0..100
   // B&W
   grayscale: boolean;
@@ -143,6 +144,7 @@ export const DEFAULT_ADJUSTMENTS: Adjustments = {
   calBlueSaturation: 0,
   sharpness: 0,
   vignette: 0,
+  fade: 0,
   grain: 0,
   grayscale: false,
 };
@@ -215,6 +217,7 @@ export const DETAIL: SliderSpec[] = [
 
 export const EFFECTS: SliderSpec[] = [
   { key: "vignette", label: "Vignette", min: -100, max: 100 },
+  { key: "fade", label: "Fade", min: 0, max: 100 },
   { key: "grain", label: "Grain", min: 0, max: 100 },
 ];
 
@@ -272,6 +275,7 @@ const NUMERIC_RANGES: Record<NumericKey, readonly [min: number, max: number]> = 
   calBlueSaturation: [-100, 100],
   sharpness: [0, 150],
   vignette: [-100, 100],
+  fade: [0, 100],
   grain: [0, 100],
 };
 

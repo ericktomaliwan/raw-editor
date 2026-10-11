@@ -240,6 +240,7 @@ export class Renderer {
 
     f("u_sharpness", n(a.sharpness));
     f("u_vignette", n(a.vignette));
+    f("u_fade", n(a.fade));
     f("u_grain", n(a.grain));
     f("u_grayscale", a.grayscale ? 1 : 0);
   }

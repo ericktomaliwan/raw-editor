@@ -40,7 +40,7 @@ uniform float u_gradeBalance;
 uniform mat3  u_calibration;
 uniform float u_shadowTint;
 // Detail / effects
-uniform float u_sharpness, u_vignette, u_grain, u_grayscale;
+uniform float u_sharpness, u_vignette, u_fade, u_grain, u_grayscale;
 
 const float PI = 3.14159265359;
 
@@ -295,6 +295,22 @@ vec3 vignette(vec3 c) {
   return c * (1.0 + amt * v);
 }
 
+// Matte "faded film" look: blacks are lifted to a soft grey, whites are pulled
+// down slightly, and midtones stay roughly where they were, so the picture
+// loses depth without getting darker or lighter overall.
+//
+// The curve is a cubic fitted to that shape. At full strength it maps
+// 0 -> 0.26, 0.25 -> 0.33, 0.5 -> 0.51, 0.75 -> 0.72 and 1 -> 0.87; the slider
+// blends between the untouched image and that result. Applied per channel on
+// display-referred values, so colours wash out a little too, as they should.
+vec3 fade(vec3 c) {
+  if (u_fade <= 0.0) return c;
+  vec3 x = clamp(c, 0.0, 1.0);
+  vec3 curve = ((-0.9772 * x + 1.708) * x - 0.1603) * x + 0.2878;
+  vec3 faded = x + (curve - x) * 0.9;
+  return mix(c, faded, u_fade);
+}
+
 vec3 grain(vec3 c) {
   if (u_grain <= 0.0) return c;
   vec2 px = floor(v_uv / u_texel);
@@ -327,6 +343,9 @@ void main() {
   if (u_grayscale > 0.5) c = vec3(luma(c));
   c = sharpen(c, src);
   c = vignette(c);
+  // After the vignette so darkened corners get the same matte floor; before
+  // grain so the grain sits on top of the faded image rather than being flattened.
+  c = fade(c);
   c = grain(c);
 
   outColor = vec4(clamp(c, 0.0, 1.0), texel.a);
