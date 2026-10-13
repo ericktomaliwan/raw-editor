@@ -12,24 +12,25 @@ import type { Adjustments } from "@/lib/adjustments";
 import { type CropRect, fullRect } from "@/lib/crop";
 import type { LoadedImage } from "@/lib/image";
 import { encodeJpeg } from "@/lib/jpeg/encoder";
+import { encodePng } from "@/lib/png/encoder";
 import { Renderer } from "@/lib/webgl/renderer";
 import { CropOverlay } from "./CropOverlay";
 
 export interface ExportResult {
   blob: Blob;
   /**
-   * True when a JPEG had to be written by the browser's built-in encoder
-   * because the MozJPEG encoder couldn't run. Always false for other formats.
+   * True when a JPEG or PNG had to be written by the browser's built-in
+   * encoder because ours (MozJPEG, OxiPNG) couldn't run. Always false for WebP.
    */
-  usedBuiltInJpegEncoder: boolean;
+  usedBuiltInEncoder: boolean;
 }
 
 export interface ViewportHandle {
   maxTextureSize: number;
   /**
    * Render at full resolution (of the crop, if there is one) and encode.
-   * `quality` is 0..1. JPEGs go through MozJPEG, with the browser's encoder
-   * as the fallback.
+   * `quality` is 0..1. JPEGs go through MozJPEG and PNGs through OxiPNG, with
+   * the browser's encoder as the fallback for both.
    */
   exportBlob(type: string, quality?: number): Promise<ExportResult>;
 }
@@ -162,11 +163,12 @@ export function ImageViewport({
           new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, type, quality));
 
         let blob: Blob | null = null;
-        let usedBuiltInJpegEncoder = false;
+        let usedBuiltInEncoder = false;
 
-        if (type === "image/jpeg") {
-          // Read the full-size render back and hand it to MozJPEG in its worker.
-          // The display render is restored first: the pixels are already copied.
+        if (type === "image/jpeg" || type === "image/png") {
+          // Read the full-size render back and hand it to MozJPEG or OxiPNG in
+          // its worker. The display render is restored first: the pixels are
+          // already copied.
           r.render(adjustments, full);
           let pixels: ReturnType<Renderer["readPixels"]> = null;
           try {
@@ -176,13 +178,18 @@ export function ImageViewport({
           }
           restore();
           if (pixels) {
+            const raw = { ...pixels, flipY: true };
             try {
-              blob = await encodeJpeg({ ...pixels, flipY: true }, Math.round(quality * 100));
+              blob =
+                type === "image/png"
+                  ? await encodePng(raw)
+                  : await encodeJpeg(raw, Math.round(quality * 100));
             } catch (e) {
-              console.warn("[export] MozJPEG unavailable, using the browser's JPEG encoder:", e);
+              const name = type === "image/png" ? "OxiPNG" : "MozJPEG";
+              console.warn(`[export] ${name} unavailable, using the browser's encoder:`, e);
             }
           }
-          usedBuiltInJpegEncoder = blob === null;
+          usedBuiltInEncoder = blob === null;
         }
 
         if (!blob) {
@@ -193,7 +200,7 @@ export function ImageViewport({
           blob = await result;
         }
         if (!blob) throw new Error("Export failed — the image may be too large for this browser.");
-        return { blob, usedBuiltInJpegEncoder };
+        return { blob, usedBuiltInEncoder };
       },
     }),
     [image, adjustments, pixelW, pixelH, compare, viewX, viewY, viewW, viewH, cropX, cropY, cropW, cropH],

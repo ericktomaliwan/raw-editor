@@ -33,6 +33,7 @@ import { MAX_XMP_BYTES, parseXmpPreset, type Preset } from "@/lib/xmp";
 import { AdjustmentsPanel } from "./AdjustmentsPanel";
 import { CropPanel } from "./CropPanel";
 import { DropZone } from "./DropZone";
+import { ExportProgress } from "./ExportProgress";
 import { type ExportFormat, HeaderActions, JPEG_QUALITY_DEFAULT } from "./HeaderActions";
 import { ImageViewport, type ViewportHandle } from "./ImageViewport";
 import { PresetsPanel } from "./PresetsPanel";
@@ -40,10 +41,24 @@ import { PresetsPanel } from "./PresetsPanel";
 /** Input types that hold no text, so Cmd/Ctrl+Z on them can mean "undo the edit". */
 const NON_TEXT_INPUTS = new Set(["range", "checkbox", "radio", "button", "submit", "reset", "file", "color"]);
 
+/**
+ * Rough export time in milliseconds per megapixel on a fast laptop. It only
+ * paces the progress bar, and only until this session has timed a real export
+ * in that format. PNG is the slow one: its encoder searches for the smallest
+ * file. The others mostly cost the full-size render and readback.
+ */
+const EXPORT_MS_PER_MEGAPIXEL: Record<ExportFormat, number> = {
+  "image/jpeg": 150,
+  "image/png": 800,
+  "image/webp": 100,
+};
+/** Floor for the estimate, so the bar is still seen to move on a tiny image. */
+const EXPORT_ESTIMATE_MIN_MS = 400;
+
 export function Editor() {
   const viewportRef = useRef<ViewportHandle>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const builtInJpegNoticeShown = useRef(false);
+  const builtInEncoderNoticeShown = useRef(false);
 
   const [image, setImage] = useState<LoadedImage | null>(null);
   // The edit itself (adjustments, active preset, crop, crop ratio) lives in an
@@ -65,7 +80,10 @@ export function Editor() {
   const cropAtEntry = useRef<CropRect | null>(null);
   const [dragging, setDragging] = useState(false);
   const [loading, setLoading] = useState<string | null>(null); // status text while decoding
-  const [exporting, setExporting] = useState(false);
+  /** Expected duration (ms) of the export in progress, which paces the progress bar; null when idle. */
+  const [exportEstimate, setExportEstimate] = useState<number | null>(null);
+  /** Measured ms per megapixel of the last export in each format, for the next estimate. */
+  const exportRates = useRef<Partial<Record<ExportFormat, number>>>({});
   const [exportFormat, setExportFormat] = useState<ExportFormat>("image/jpeg");
   const [jpegQuality, setJpegQuality] = useState(JPEG_QUALITY_DEFAULT);
   const [toast, setToast] = useState<{ message: string; kind: "error" | "info" } | null>(null);
@@ -341,20 +359,24 @@ export function Editor() {
   // ----- export -----
   const exportImage = async () => {
     if (!image || !viewportRef.current) return;
-    setExporting(true);
+    const megapixels = ((crop?.width ?? image.width) * (crop?.height ?? image.height)) / 1e6;
+    const rate = exportRates.current[exportFormat] ?? EXPORT_MS_PER_MEGAPIXEL[exportFormat];
+    setExportEstimate(Math.max(EXPORT_ESTIMATE_MIN_MS, megapixels * rate));
+    const started = performance.now();
     try {
       // The quality field only applies to JPEG; WebP keeps its fixed setting and
       // PNG is lossless (the encoder ignores the value).
       const quality = exportFormat === "image/jpeg" ? jpegQuality / 100 : 0.92;
-      const { blob, usedBuiltInJpegEncoder } = await viewportRef.current.exportBlob(
+      const { blob, usedBuiltInEncoder } = await viewportRef.current.exportBlob(
         exportFormat,
         quality,
       );
+      exportRates.current[exportFormat] = (performance.now() - started) / megapixels;
       // The export still succeeds, just less tightly compressed. Say so once.
-      if (usedBuiltInJpegEncoder && !builtInJpegNoticeShown.current) {
-        builtInJpegNoticeShown.current = true;
+      if (usedBuiltInEncoder && !builtInEncoderNoticeShown.current) {
+        builtInEncoderNoticeShown.current = true;
         notify(
-          "The optimised JPEG encoder couldn't run here, so the browser's own encoder was used. Files may be larger.",
+          `The optimised ${exportFormat === "image/png" ? "PNG" : "JPEG"} encoder couldn't run here, so the browser's own encoder was used. Files may be larger.`,
           "info",
         );
       }
@@ -368,7 +390,7 @@ export function Editor() {
     } catch (e) {
       notify(e instanceof Error ? e.message : "Export failed.");
     } finally {
-      setExporting(false);
+      setExportEstimate(null);
     }
   };
 
@@ -378,7 +400,7 @@ export function Editor() {
   return (
     <div className="flex h-dvh flex-col bg-zinc-950 text-zinc-200">
       {/* Header */}
-      <header className="flex h-12 shrink-0 items-center gap-3 border-b border-zinc-800 px-4">
+      <header className="relative flex h-12 shrink-0 items-center gap-3 border-b border-zinc-800 px-4">
         <div className="flex items-center gap-2">
           <span className="grid h-6 w-6 place-items-center rounded bg-zinc-100 text-[11px] font-bold text-zinc-900">
             R
@@ -427,7 +449,7 @@ export function Editor() {
           hasImage={!!image}
           edited={edited}
           compare={compare}
-          exporting={exporting}
+          exporting={exportEstimate !== null}
           exportFormat={exportFormat}
           jpegQuality={jpegQuality}
           onOpen={() => fileInputRef.current?.click()}
@@ -437,6 +459,7 @@ export function Editor() {
           onQualityChange={setJpegQuality}
           onExport={exportImage}
         />
+        <ExportProgress estimateMs={exportEstimate} />
       </header>
 
       {/* Workspace */}

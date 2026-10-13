@@ -95,6 +95,29 @@ body {
   background: #ffffff;
 }
 
+/*
+ * Export progress bar (components/editor/ExportProgress.tsx). The component
+ * sets the duration to four times the estimated export time: the bar covers
+ * 90% in the first quarter, i.e. by the estimate, then creeps.
+ */
+.export-progress {
+  animation-name: export-progress;
+  animation-timing-function: linear;
+  animation-fill-mode: both;
+}
+@keyframes export-progress {
+  0% {
+    transform: scaleX(0);
+  }
+  25% {
+    transform: scaleX(0.9);
+    animation-timing-function: ease-out;
+  }
+  100% {
+    transform: scaleX(0.99);
+  }
+}
+
 /* Hide number input spinners in the slider value fields. */
 input[type="number"]::-webkit-outer-spin-button,
 input[type="number"]::-webkit-inner-spin-button {

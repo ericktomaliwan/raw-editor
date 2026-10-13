@@ -15,6 +15,7 @@ const eslintConfig = defineConfig([
     // WASM runtimes copied into public/ (see scripts/copy-wasm.mjs).
     "public/libraw/**",
     "public/mozjpeg/**",
+    "public/oxipng/**",
   ]),
 ]);
 
