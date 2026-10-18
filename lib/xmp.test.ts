@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from "vitest";
-import { MAX_PRESET_LABEL, parseXmpPreset } from "./xmp";
+import { MAX_PRESET_LABEL } from "./presets";
+import { parseXmpPreset } from "./xmp";
 
 /** A test namespace: the parser matches the `crs` prefix or the schema name, not a host. */
 const NS = `xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns:crs="http://example.com/camera-raw-settings/1.0/"`;

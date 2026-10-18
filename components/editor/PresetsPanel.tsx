@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState, type DragEvent } from "react";
-import type { Preset } from "@/lib/xmp";
+import type { Preset } from "@/lib/presets";
 import { Section } from "./Section";
 
 interface Props {

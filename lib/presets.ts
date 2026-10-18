@@ -1,4 +1,21 @@
-import type { Preset } from "./xmp";
+import type { Adjustments } from "./adjustments";
+
+export interface Preset {
+  id: string;
+  name: string;
+  group?: string;
+  adjustments: Partial<Adjustments>;
+  /** "builtin" ships with the editor (below); "imported" came from an .xmp file (lib/xmp.ts). */
+  source: "imported" | "builtin";
+}
+
+/** Longest preset / group name kept (shown in the panel and stored). */
+export const MAX_PRESET_LABEL = 120;
+
+/** Trim a preset or group name and cap its length. */
+export function cleanLabel(value: string | undefined): string {
+  return (value ?? "").trim().slice(0, MAX_PRESET_LABEL).trim();
+}
 
 /** Prefix shared by every built-in preset id. */
 export const BUILTIN_ID_PREFIX = "builtin:";

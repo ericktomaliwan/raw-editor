@@ -1,7 +1,6 @@
 import { useSyncExternalStore } from "react";
 import { sanitizeAdjustments } from "./adjustments";
-import { BUILTIN_ID_PREFIX } from "./presets";
-import { cleanLabel, type Preset } from "./xmp";
+import { BUILTIN_ID_PREFIX, cleanLabel, type Preset } from "./presets";
 
 /**
  * Imported presets persisted in localStorage, exposed as an external store

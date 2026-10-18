@@ -26,6 +26,12 @@ export interface DecodedRaw {
   bitmap: ImageBitmap;
   width: number;
   height: number;
+  /**
+   * Full size of the picture, oriented like the bitmap. Larger than the bitmap
+   * when the sensor data was decoded at half size to fit the GPU.
+   */
+  sourceWidth: number;
+  sourceHeight: number;
   metadata: RawMetadata;
   /** True when we fell back to the embedded JPEG preview. */
   preview: boolean;
@@ -98,7 +104,11 @@ export function rawDecodingAvailable(): { ok: boolean; reason?: string } {
 }
 
 export interface DecodeOptions {
-  /** Longest side allowed; larger images are decoded at half size. */
+  /**
+   * Longest side allowed; larger images are decoded at half size. That can
+   * still exceed it (a sensor more than twice the limit), so the caller fits
+   * the result afterwards (lib/image.ts).
+   */
   maxSize: number;
   onStatus?: (status: string) => void;
 }
@@ -148,7 +158,21 @@ export async function decodeRawFile(file: File, opts: DecodeOptions): Promise<De
     if (image && image.data.length) {
       opts.onStatus?.("Uploading…");
       const bitmap = await toBitmap(image);
-      return { bitmap, width: bitmap.width, height: bitmap.height, metadata, preview: false };
+      // LibRaw reports the sensor size before rotation; turn it to match the bitmap.
+      const source = !halfSize
+        ? { width: bitmap.width, height: bitmap.height }
+        : meta.width >= meta.height === bitmap.width >= bitmap.height
+          ? { width: meta.width, height: meta.height }
+          : { width: meta.height, height: meta.width };
+      return {
+        bitmap,
+        width: bitmap.width,
+        height: bitmap.height,
+        sourceWidth: source.width,
+        sourceHeight: source.height,
+        metadata,
+        preview: false,
+      };
     }
 
     // Fallback: embedded preview.
@@ -158,7 +182,15 @@ export async function decodeRawFile(file: File, opts: DecodeOptions): Promise<De
     if (thumb && thumb.format === "jpeg" && thumb.data.length) {
       const blob = new Blob([thumb.data as BlobPart], { type: "image/jpeg" });
       const bitmap = await createImageBitmap(blob, { imageOrientation: "from-image" });
-      return { bitmap, width: bitmap.width, height: bitmap.height, metadata, preview: true };
+      return {
+        bitmap,
+        width: bitmap.width,
+        height: bitmap.height,
+        sourceWidth: bitmap.width,
+        sourceHeight: bitmap.height,
+        metadata,
+        preview: true,
+      };
     }
 
     throw new RawDecodeError(

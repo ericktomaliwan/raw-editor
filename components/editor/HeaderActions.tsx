@@ -2,19 +2,14 @@
 
 import Link from "next/link";
 import { useEffect, useId, useRef, useState } from "react";
+import {
+  EXPORT_FORMAT_ORDER,
+  EXPORT_FORMATS,
+  type ExportFormat,
+  QUALITY_MAX,
+  QUALITY_MIN,
+} from "@/lib/exportFormat";
 import { EXPORT_SIZES, type ExportSize } from "@/lib/exportSize";
-
-export type ExportFormat = "image/jpeg" | "image/png" | "image/webp";
-
-/** JPEG and WebP export quality, as the familiar 1–100 scale. Lower = smaller file. */
-export const QUALITY_MIN = 1;
-export const QUALITY_MAX = 100;
-export const QUALITY_DEFAULT = 92;
-
-/** The formats the quality setting applies to (PNG is lossless). */
-export function hasQuality(format: ExportFormat): boolean {
-  return format !== "image/png";
-}
 
 interface Props {
   hasImage: boolean;
@@ -105,11 +100,9 @@ function InlineActions({
           className="bg-zinc-900 px-2 text-[11px] text-zinc-300 outline-none"
           aria-label="Export format"
         >
-          <option value="image/jpeg">JPEG</option>
-          <option value="image/png">PNG</option>
-          <option value="image/webp">WebP</option>
+          <FormatOptions />
         </select>
-        {hasQuality(exportFormat) && (
+        {EXPORT_FORMATS[exportFormat].hasQuality && (
           <QualityField variant="inline" value={quality} onCommit={onQualityChange} />
         )}
         <SizeSelect
@@ -277,12 +270,10 @@ function HamburgerMenu({
               onChange={(e) => onFormatChange(e.target.value as ExportFormat)}
               className="rounded border border-zinc-700 bg-zinc-950 px-2 py-1 text-[11px] text-zinc-200 outline-none focus:border-zinc-500"
             >
-              <option value="image/jpeg">JPEG</option>
-              <option value="image/png">PNG</option>
-              <option value="image/webp">WebP</option>
+              <FormatOptions />
             </select>
           </label>
-          {hasQuality(exportFormat) && (
+          {EXPORT_FORMATS[exportFormat].hasQuality && (
             <QualityField variant="row" value={quality} onCommit={onQualityChange} />
           )}
           <SizeSelect
@@ -312,6 +303,15 @@ function HamburgerMenu({
       )}
     </div>
   );
+}
+
+/** The format menu's choices, shared by both layouts. */
+function FormatOptions() {
+  return EXPORT_FORMAT_ORDER.map((format) => (
+    <option key={format} value={format}>
+      {EXPORT_FORMATS[format].label}
+    </option>
+  ));
 }
 
 /**

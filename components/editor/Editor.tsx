@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import {
   type Adjustments,
   applyPreset,
@@ -16,73 +16,32 @@ import {
   isFullRect,
   resolveAspect,
 } from "@/lib/crop";
-import { collectDroppedFiles, type DroppedFile } from "@/lib/dropFiles";
-import { exportDimensions, type ExportSize } from "@/lib/exportSize";
-import {
-  isRawFile,
-  isXmpFile,
-  type LoadedImage,
-  loadImageFile,
-  RAW_EXTENSIONS,
-  stripExtension,
-} from "@/lib/image";
-import { formatRawMetadata } from "@/lib/raw/decoder";
+import type { DroppedFile } from "@/lib/dropFiles";
+import { isXmpFile, RAW_EXTENSIONS, stripExtension } from "@/lib/image";
 import { useImportedPresets } from "@/lib/presetStore";
-import { BUILTIN_PRESETS } from "@/lib/presets";
+import { BUILTIN_PRESETS, type Preset } from "@/lib/presets";
+import { formatRawMetadata } from "@/lib/raw/decoder";
 import { useEditHistory } from "@/lib/useEditHistory";
-import { MAX_XMP_BYTES, parseXmpPreset, type Preset } from "@/lib/xmp";
+import { MAX_XMP_BYTES, parseXmpPreset } from "@/lib/xmp";
 import { AdjustmentsPanel } from "./AdjustmentsPanel";
 import { CropPanel } from "./CropPanel";
 import { DropZone } from "./DropZone";
 import { ExportProgress } from "./ExportProgress";
-import { type ExportFormat, HeaderActions, hasQuality, QUALITY_DEFAULT } from "./HeaderActions";
+import { HeaderActions } from "./HeaderActions";
+import { useEditorShortcuts } from "./hooks/useEditorShortcuts";
+import { useExport } from "./hooks/useExport";
+import { useImageLoader } from "./hooks/useImageLoader";
+import { useToast } from "./hooks/useToast";
+import { useWindowFileDrop } from "./hooks/useWindowFileDrop";
 import { ImageViewport, type ViewportHandle } from "./ImageViewport";
 import { PresetsPanel } from "./PresetsPanel";
-
-/** Input types that hold no text, so Cmd/Ctrl+Z on them can mean "undo the edit". */
-const NON_TEXT_INPUTS = new Set([
-  "range",
-  "checkbox",
-  "radio",
-  "button",
-  "submit",
-  "reset",
-  "file",
-  "color",
-]);
-
-/**
- * Rough export time in milliseconds per megapixel on a fast laptop. It only
- * paces the progress bar, and only until this session has timed a real export
- * in that format. PNG is the slow one: its encoder searches for the smallest
- * file. WebP's encode is about 115 ms per megapixel on its own.
- */
-const EXPORT_MS_PER_MEGAPIXEL: Record<ExportFormat, number> = {
-  "image/jpeg": 150,
-  "image/png": 800,
-  "image/webp": 200,
-};
-
-const FORMAT_LABELS: Record<ExportFormat, string> = {
-  "image/jpeg": "JPEG",
-  "image/png": "PNG",
-  "image/webp": "WebP",
-};
-/**
- * Extra time for a smaller export, per megapixel of the *full-size* crop: the
- * source readback plus the Lanczos resize (about 60 ms/MP on its own).
- */
-const RESIZE_MS_PER_MEGAPIXEL = 80;
-/** Floor for the estimate, so the bar is still seen to move on a tiny image. */
-const EXPORT_ESTIMATE_MIN_MS = 400;
+import { Toast } from "./Toast";
 
 export function Editor() {
   const viewportRef = useRef<ViewportHandle>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const builtInEncoderNoticeShown = useRef(false);
-  const builtInResizeNoticeShown = useRef(false);
+  const { toast, notify } = useToast();
 
-  const [image, setImage] = useState<LoadedImage | null>(null);
   // The edit itself (adjustments, active preset, crop, crop ratio) lives in an
   // undo/redo history; every change goes through `apply`. The crop is its own
   // field, apart from `adjustments`, on purpose: a preset replaces the
@@ -100,67 +59,20 @@ export function Editor() {
   const [cropping, setCropping] = useState(false);
   /** The crop as it was when cropping started, for Cancel / Escape. */
   const cropAtEntry = useRef<CropRect | null>(null);
-  const [dragging, setDragging] = useState(false);
-  const [loading, setLoading] = useState<string | null>(null); // status text while decoding
-  /** Expected duration (ms) of the export in progress, which paces the progress bar; null when idle. */
-  const [exportEstimate, setExportEstimate] = useState<number | null>(null);
-  /** Measured ms per megapixel of the last export in each format, for the next estimate. */
-  const exportRates = useRef<Partial<Record<ExportFormat, number>>>({});
-  /** Measured ms per full-size megapixel of the last resize, for the next estimate. */
-  const resizeRate = useRef<number | null>(null);
-  const [exportFormat, setExportFormat] = useState<ExportFormat>("image/jpeg");
-  const [quality, setQuality] = useState(QUALITY_DEFAULT);
-  const [exportSize, setExportSize] = useState<ExportSize>(null);
-  const [toast, setToast] = useState<{ message: string; kind: "error" | "info" } | null>(null);
 
-  // ----- toast -----
-  const notify = useCallback((message: string, kind: "error" | "info" = "error") => {
-    setToast({ message, kind });
-  }, []);
-  useEffect(() => {
-    if (!toast) return;
-    const id = setTimeout(() => setToast(null), 5000);
-    return () => clearTimeout(id);
-  }, [toast]);
-
-  // ----- file handling -----
-  const openImage = useCallback(
-    async (file: File) => {
-      const raw = isRawFile(file);
-      setLoading(raw ? "Decoding RAW…" : "Loading…");
-      try {
-        const max = viewportRef.current?.maxTextureSize ?? 4096;
-        const loaded = await loadImageFile(file, max, {
-          onStatus: raw ? (s) => setLoading(s) : undefined,
-        });
-        setImage((prev) => {
-          prev?.bitmap.close();
-          return loaded;
-        });
-        // The adjustments carry over to the new photo, but a crop is in pixels of
-        // the photo it was made on, so it doesn't. Undo history starts over too:
-        // its earlier steps hold crops that belong to the previous photo.
-        restart((prev) => ({ ...prev, crop: null, aspect: FREE_ASPECT }));
-        setCropping(false);
-        if (loaded.raw?.preview) {
-          notify(
-            "Sensor data couldn't be decoded, so the embedded preview is being edited instead.",
-            "info",
-          );
-        } else if (loaded.width !== loaded.sourceWidth) {
-          notify(
-            `Image downscaled to ${loaded.width}×${loaded.height} to fit this GPU's texture limit.`,
-            "info",
-          );
-        }
-      } catch (e) {
-        notify(e instanceof Error ? e.message : "Couldn't open that file.");
-      } finally {
-        setLoading(null);
-      }
-    },
-    [notify, restart],
-  );
+  // ----- opening files -----
+  const onImageLoaded = useCallback(() => {
+    // The adjustments carry over to the new photo, but a crop is in pixels of
+    // the photo it was made on, so it doesn't. Undo history starts over too:
+    // its earlier steps hold crops that belong to the previous photo.
+    restart((prev) => ({ ...prev, crop: null, aspect: FREE_ASPECT }));
+    setCropping(false);
+  }, [restart]);
+  const { image, loading, openImage } = useImageLoader({
+    viewportRef,
+    onLoaded: onImageLoaded,
+    notify,
+  });
 
   const importPresetFiles = useCallback(
     async (files: DroppedFile[]) => {
@@ -208,70 +120,9 @@ export function Editor() {
     },
     [importPresetFiles, openImage, notify],
   );
+  const dragging = useWindowFileDrop(handleFiles);
 
-  // Window-level drag & drop so a photo can be dropped anywhere.
-  //
-  // Always cancel the default for dragover/drop: if the browser is allowed to
-  // handle a dropped file itself it navigates to it, which for a RAW/DNG means
-  // downloading it. `dataTransfer.types` is not reliable mid-drag in every
-  // browser, so don't gate preventDefault on it — only gate our own handling.
-  useEffect(() => {
-    let depth = 0;
-    const hasFiles = (e: DragEvent) => {
-      const types = e.dataTransfer?.types;
-      return !!types && (Array.from(types).includes("Files") || types.length === 0);
-    };
-    const onEnter = (e: DragEvent) => {
-      e.preventDefault();
-      if (!hasFiles(e)) return;
-      depth++;
-      setDragging(true);
-    };
-    const onOver = (e: DragEvent) => {
-      e.preventDefault();
-      if (e.dataTransfer) e.dataTransfer.dropEffect = hasFiles(e) ? "copy" : "none";
-    };
-    const onLeave = () => {
-      depth = Math.max(0, depth - 1);
-      if (depth === 0) setDragging(false);
-    };
-    const onDrop = (e: DragEvent) => {
-      e.preventDefault();
-      depth = 0;
-      setDragging(false);
-      const dt = e.dataTransfer;
-      if (!dt) return;
-      // Collect synchronously: entries are only readable during the event.
-      void collectDroppedFiles(dt).then((dropped) => {
-        if (dropped.length) handleFiles(dropped);
-      });
-    };
-    // Capture phase so nothing deeper in the tree can swallow the events.
-    window.addEventListener("dragenter", onEnter, true);
-    window.addEventListener("dragover", onOver, true);
-    window.addEventListener("dragleave", onLeave, true);
-    window.addEventListener("drop", onDrop, true);
-    return () => {
-      window.removeEventListener("dragenter", onEnter, true);
-      window.removeEventListener("dragover", onOver, true);
-      window.removeEventListener("dragleave", onLeave, true);
-      window.removeEventListener("drop", onDrop, true);
-    };
-  }, [handleFiles]);
-
-  // Keyboard: "\" toggles before/after.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      const target = e.target as HTMLElement | null;
-      if (target && ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)) return;
-      if (e.key === "\\") {
-        e.preventDefault();
-        setCompare((c) => !c);
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  const exporter = useExport({ viewportRef, image, adjustments, crop, notify });
 
   // ----- adjustments -----
   const updateAdjustments = (patch: Partial<Adjustments>) => {
@@ -343,108 +194,20 @@ export function Editor() {
     });
   };
 
-  // While cropping: Enter finishes, Escape puts the crop back as it was.
-  useEffect(() => {
-    if (!cropping) return;
-    const onKey = (e: KeyboardEvent) => {
-      const tag = (e.target as HTMLElement | null)?.tagName ?? "";
-      if (["INPUT", "TEXTAREA", "SELECT"].includes(tag)) return;
-      if (e.key === "Escape") {
-        const entry = cropAtEntry.current;
-        apply((prev) => ({ ...prev, crop: entry }));
-        setCropping(false);
-      } else if (e.key === "Enter" && tag !== "BUTTON" && tag !== "A") {
-        // (On a button or link, Enter belongs to that control.)
-        e.preventDefault();
-        setCropping(false);
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [cropping, apply]);
-
-  // Undo / redo: Cmd+Z and Cmd+Shift+Z on a Mac, Ctrl+Z and Ctrl+Y (or
-  // Ctrl+Shift+Z) elsewhere.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (!(e.metaKey || e.ctrlKey) || e.altKey) return;
-      const key = e.key.toLowerCase();
-      const isUndo = key === "z" && !e.shiftKey;
-      const isRedo = (key === "z" && e.shiftKey) || (key === "y" && e.ctrlKey && !e.metaKey);
-      if (!isUndo && !isRedo) return;
-      // While typing in a text field, the shortcut belongs to the field: it
-      // undoes the typing. (Sliders are inputs too, but not text ones.)
-      const t = e.target;
-      if (t instanceof HTMLTextAreaElement || (t instanceof HTMLElement && t.isContentEditable))
-        return;
-      if (t instanceof HTMLInputElement && !NON_TEXT_INPUTS.has(t.type)) return;
-      e.preventDefault();
-      if (isUndo) undo();
-      else redo();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [undo, redo]);
-
-  // ----- export -----
-  const exportImage = async () => {
-    if (!image || !viewportRef.current) return;
-    const fullW = crop?.width ?? image.width;
-    const fullH = crop?.height ?? image.height;
-    const size = exportDimensions(fullW, fullH, exportSize);
-    const resizing = size.width !== fullW || size.height !== fullH;
-    const fullMegapixels = (fullW * fullH) / 1e6;
-    const megapixels = (size.width * size.height) / 1e6;
-    const rate = exportRates.current[exportFormat] ?? EXPORT_MS_PER_MEGAPIXEL[exportFormat];
-    const resizeEstimate = resizing
-      ? fullMegapixels * (resizeRate.current ?? RESIZE_MS_PER_MEGAPIXEL)
-      : 0;
-    setExportEstimate(Math.max(EXPORT_ESTIMATE_MIN_MS, megapixels * rate + resizeEstimate));
-    const started = performance.now();
-    try {
-      // The quality field applies to JPEG and WebP; PNG is lossless (the
-      // encoder ignores the value).
-      const { blob, usedBuiltInEncoder, usedBuiltInResize, resizeMs } =
-        await viewportRef.current.exportBlob(
-          exportFormat,
-          hasQuality(exportFormat) ? quality / 100 : 1,
-          exportSize,
-        );
-      exportRates.current[exportFormat] = (performance.now() - started - resizeMs) / megapixels;
-      if (resizing && !usedBuiltInResize) resizeRate.current = resizeMs / fullMegapixels;
-      if (usedBuiltInResize && !builtInResizeNoticeShown.current) {
-        builtInResizeNoticeShown.current = true;
-        notify(
-          "The high-quality resizer couldn't run here, so the photo was scaled the way the preview is. It may look a little softer.",
-          "info",
-        );
-      }
-      // The export still succeeds, just less tightly compressed. Say so once.
-      if (usedBuiltInEncoder && !builtInEncoderNoticeShown.current) {
-        builtInEncoderNoticeShown.current = true;
-        notify(
-          `The optimised ${FORMAT_LABELS[exportFormat]} encoder couldn't run here, so the browser's own encoder was used. Files may be larger.`,
-          "info",
-        );
-      }
-      const ext =
-        exportFormat === "image/png" ? "png" : exportFormat === "image/webp" ? "webp" : "jpg";
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      const suffix = resizing ? `-${size.width}x${size.height}` : "";
-      a.download = `${stripExtension(image.name)}-edited${suffix}.${ext}`;
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
-    } catch (e) {
-      notify(e instanceof Error ? e.message : "Export failed.");
-    } finally {
-      setExportEstimate(null);
-    }
-  };
+  useEditorShortcuts({
+    cropping,
+    onToggleCompare: () => setCompare((c) => !c),
+    onUndo: undo,
+    onRedo: redo,
+    onFinishCrop: () => setCropping(false),
+    onCancelCrop: cancelCrop,
+  });
 
   // Anything the nav's Reset would undo: a changed slider or a crop.
   const edited = !isDefault(adjustments) || crop !== null;
+  /** What an export would save at full size: the crop, or the whole photo. */
+  const area = image ? (crop ?? fullRect(image.width, image.height)) : null;
+  const rawDetails = image?.raw ? formatRawMetadata(image.raw.metadata) : "";
 
   return (
     <div className="flex h-dvh flex-col bg-zinc-950 text-zinc-200">
@@ -469,10 +232,8 @@ export function Editor() {
                   <span className="rounded bg-zinc-800 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-zinc-300">
                     {image.raw.preview ? "RAW preview" : "RAW"}
                   </span>
-                  {formatRawMetadata(image.raw.metadata) && (
-                    <span className="ml-2 hidden text-zinc-500 md:inline">
-                      {formatRawMetadata(image.raw.metadata)}
-                    </span>
+                  {rawDetails && (
+                    <span className="ml-2 hidden text-zinc-500 md:inline">{rawDetails}</span>
                   )}
                 </>
               )}
@@ -498,22 +259,20 @@ export function Editor() {
           hasImage={!!image}
           edited={edited}
           compare={compare}
-          exporting={exportEstimate !== null}
-          exportFormat={exportFormat}
-          quality={quality}
-          exportSize={exportSize}
-          fullLongEdge={
-            image ? Math.max(crop?.width ?? image.width, crop?.height ?? image.height) : null
-          }
+          exporting={exporter.exporting}
+          exportFormat={exporter.format}
+          quality={exporter.quality}
+          exportSize={exporter.size}
+          fullLongEdge={area ? Math.max(area.width, area.height) : null}
           onOpen={() => fileInputRef.current?.click()}
           onCompareChange={setCompare}
           onReset={resetAll}
-          onFormatChange={setExportFormat}
-          onQualityChange={setQuality}
-          onExportSizeChange={setExportSize}
-          onExport={exportImage}
+          onFormatChange={exporter.setFormat}
+          onQualityChange={exporter.setQuality}
+          onExportSizeChange={exporter.setSize}
+          onExport={exporter.runExport}
         />
-        <ExportProgress estimateMs={exportEstimate} />
+        <ExportProgress estimateMs={exporter.estimateMs} />
       </header>
 
       {/* Workspace */}
@@ -573,11 +332,7 @@ export function Editor() {
             disabled={!image}
             cropping={cropping}
             cropped={crop !== null}
-            size={
-              image
-                ? { width: crop?.width ?? image.width, height: crop?.height ?? image.height }
-                : null
-            }
+            size={area && { width: area.width, height: area.height }}
             aspect={aspect}
             onStart={startCrop}
             onDone={() => setCropping(false)}
@@ -607,19 +362,7 @@ export function Editor() {
         </aside>
       </div>
 
-      {/* Toast */}
-      {toast && (
-        <div
-          role="status"
-          className={`fixed bottom-5 left-1/2 z-50 -translate-x-1/2 rounded-lg border px-4 py-2 text-xs shadow-xl ${
-            toast.kind === "error"
-              ? "border-red-900/60 bg-red-950/90 text-red-200"
-              : "border-zinc-700 bg-zinc-900/95 text-zinc-200"
-          }`}
-        >
-          {toast.message}
-        </div>
-      )}
+      <Toast toast={toast} />
     </div>
   );
 }

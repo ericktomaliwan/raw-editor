@@ -5,24 +5,21 @@
  * MozJPEG produces noticeably smaller files than a browser's built-in JPEG
  * encoder at the same visual quality. Encoding runs off the main thread, so
  * the UI stays responsive on large photos.
+ *
+ * Unlike the other pixel workers (lib/workers/pixelWorker.ts), this one is
+ * kept for the session: its codec is small, so it loads only once. Jobs carry
+ * an `id` so replies can be matched to them.
  */
+import {
+  pixelMessage,
+  type RawPixels,
+  startWorker,
+  UNSUPPORTED_MESSAGE,
+  WorkerJobError,
+  workersSupported,
+} from "@/lib/workers/pixelWorker";
+
 const WORKER_URL = "/mozjpeg/worker.js";
-
-export class JpegEncodeError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "JpegEncodeError";
-  }
-}
-
-export interface RawPixels {
-  /** Tightly packed 8-bit RGBA. Ownership moves to the encoder (the buffer is transferred). */
-  data: Uint8Array;
-  width: number;
-  height: number;
-  /** True when rows run bottom-to-top, as WebGL's readPixels returns them. */
-  flipY: boolean;
-}
 
 type Reply = { id: number; out?: ArrayBuffer; error?: string };
 type Pending = { resolve: (blob: Blob) => void; reject: (e: Error) => void };
@@ -41,7 +38,7 @@ const pending = new Map<number, Pending>();
 function reset(reason: string) {
   worker?.terminate();
   worker = null;
-  const err = new JpegEncodeError(reason);
+  const err = new WorkerJobError(reason);
   for (const p of pending.values()) p.reject(err);
   pending.clear();
 }
@@ -49,7 +46,7 @@ function reset(reason: string) {
 /** Started on first use and kept for the session, so the codec only loads once. */
 function getWorker(): Worker {
   if (worker) return worker;
-  const w = new Worker(/* turbopackIgnore: true */ WORKER_URL, { type: "module" });
+  const w = startWorker(WORKER_URL);
   w.onmessage = ({ data }: MessageEvent<Reply>) => {
     const p = pending.get(data?.id);
     if (!p) return;
@@ -57,7 +54,7 @@ function getWorker(): Worker {
     if (data.out) {
       p.resolve(new Blob([data.out], { type: "image/jpeg" }));
     } else {
-      p.reject(new JpegEncodeError(data.error || "JPEG encoding failed."));
+      p.reject(new WorkerJobError(data.error || "JPEG encoding failed."));
       // An encoder error (typically out of memory) can leave the WebAssembly
       // instance unusable, so don't reuse it.
       reset("JPEG encoder restarted.");
@@ -76,13 +73,13 @@ function getWorker(): Worker {
 /**
  * Encode raw pixels as a JPEG with MozJPEG.
  * @param quality 1–100; lower means a smaller file.
- * Rejects with JpegEncodeError if the encoder can't run here; callers should
+ * Rejects with WorkerJobError if the encoder can't run here; callers should
  * fall back to the browser's own encoder.
  */
 export function encodeJpeg(pixels: RawPixels, quality: number): Promise<Blob> {
   return new Promise<Blob>((resolve, reject) => {
-    if (typeof Worker === "undefined" || typeof WebAssembly === "undefined") {
-      reject(new JpegEncodeError("WebAssembly workers aren't supported here."));
+    if (!workersSupported()) {
+      reject(new WorkerJobError(UNSUPPORTED_MESSAGE));
       return;
     }
     try {
@@ -101,21 +98,10 @@ export function encodeJpeg(pixels: RawPixels, quality: number): Promise<Blob> {
           reject(e);
         },
       });
-      const buffer = pixels.data.buffer;
-      w.postMessage(
-        {
-          id,
-          pixels: buffer,
-          width: pixels.width,
-          height: pixels.height,
-          quality,
-          flipY: pixels.flipY,
-        },
-        [buffer as ArrayBuffer],
-      );
+      w.postMessage(...pixelMessage(pixels, { id, quality }));
     } catch (e) {
       reject(
-        new JpegEncodeError(
+        new WorkerJobError(
           e instanceof Error ? e.message : "The JPEG encoder couldn't be started.",
         ),
       );

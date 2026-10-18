@@ -5,28 +5,13 @@ import {
   type HslTriple,
   sanitizeAdjustments,
 } from "./adjustments";
-
-export interface Preset {
-  id: string;
-  name: string;
-  group?: string;
-  adjustments: Partial<Adjustments>;
-  /** "builtin" ships with the editor (lib/presets.ts); "imported" came from an .xmp file. */
-  source: "imported" | "builtin";
-}
+import { cleanLabel, type Preset } from "./presets";
 
 /**
  * Presets come from files downloaded off the internet, so bound what we accept.
  * Real presets are a few KB; ones that embed a colour lookup table reach a few MB.
  */
 export const MAX_XMP_BYTES = 10 * 1024 * 1024;
-/** Longest preset / group name kept (shown in the panel and stored). */
-export const MAX_PRESET_LABEL = 120;
-
-/** Trim a preset or group name and cap its length. */
-export function cleanLabel(value: string | undefined): string {
-  return (value ?? "").trim().slice(0, MAX_PRESET_LABEL).trim();
-}
 
 const RDF_NS = "http://www.w3.org/1999/02/22-rdf-syntax-ns#";
 

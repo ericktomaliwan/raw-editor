@@ -76,12 +76,15 @@ export async function loadImageFile(
   if (isRawFile(file)) {
     try {
       const decoded = await decodeRawFile(file, { maxSize, onStatus: opts.onStatus });
+      // Half-size decoding isn't always enough, and the embedded preview isn't
+      // limited at all, so fit the result like any other image.
+      const bitmap = await fitWithin(decoded.bitmap, maxSize);
       return {
-        bitmap: decoded.bitmap,
-        width: decoded.width,
-        height: decoded.height,
-        sourceWidth: decoded.width,
-        sourceHeight: decoded.height,
+        bitmap,
+        width: bitmap.width,
+        height: bitmap.height,
+        sourceWidth: decoded.sourceWidth,
+        sourceHeight: decoded.sourceHeight,
         name: file.name,
         raw: { metadata: decoded.metadata, preview: decoded.preview },
       };
@@ -96,18 +99,13 @@ export async function loadImageFile(
     throw new UnsupportedImageError(`"${file.name}" doesn't look like an image file.`, "unknown");
   }
 
-  // Keep colours unpremultiplied: the GPU upload, the shader and every encoder
-  // treat RGB as straight colour. By default the bitmap would hold RGB already
-  // multiplied by alpha, which darkens every semi-transparent pixel (dark
-  // fringes around cut-outs, 255 red at half alpha exported as 128).
-  const decodeOptions: ImageBitmapOptions = { premultiplyAlpha: "none" };
-  let bitmap: ImageBitmap;
+  let decoded: ImageBitmap;
   try {
-    bitmap = await createImageBitmap(file, { ...decodeOptions, imageOrientation: "from-image" });
+    decoded = await createImageBitmap(file, { ...DECODE_OPTIONS, imageOrientation: "from-image" });
   } catch {
     // Safari < 17 lacks imageOrientation support; fall back.
     try {
-      bitmap = await createImageBitmap(file, decodeOptions);
+      decoded = await createImageBitmap(file, DECODE_OPTIONS);
     } catch {
       throw new UnsupportedImageError(
         `Couldn't decode "${file.name}". The browser doesn't support this format.`,
@@ -116,21 +114,10 @@ export async function loadImageFile(
     }
   }
 
-  const sourceWidth = bitmap.width;
-  const sourceHeight = bitmap.height;
-  const largest = Math.max(sourceWidth, sourceHeight);
-  if (largest > maxSize) {
-    const scale = maxSize / largest;
-    const resized = await createImageBitmap(bitmap, {
-      ...decodeOptions,
-      resizeWidth: Math.round(sourceWidth * scale),
-      resizeHeight: Math.round(sourceHeight * scale),
-      resizeQuality: "high",
-    });
-    bitmap.close();
-    bitmap = resized;
-  }
-
+  // Read before fitting: a closed bitmap reports a size of 0.
+  const sourceWidth = decoded.width;
+  const sourceHeight = decoded.height;
+  const bitmap = await fitWithin(decoded, maxSize);
   return {
     bitmap,
     width: bitmap.width,
@@ -139,6 +126,33 @@ export async function loadImageFile(
     sourceHeight,
     name: file.name,
   };
+}
+
+/**
+ * Keep colours unpremultiplied: the GPU upload, the shader and every encoder
+ * treat RGB as straight colour. By default the bitmap would hold RGB already
+ * multiplied by alpha, which darkens every semi-transparent pixel (dark
+ * fringes around cut-outs, 255 red at half alpha exported as 128).
+ */
+const DECODE_OPTIONS: ImageBitmapOptions = { premultiplyAlpha: "none" };
+
+/**
+ * Scale a bitmap down so its long side is at most `maxSize` (the GPU's texture
+ * limit), closing the original (which then reports a size of 0, so read its
+ * size first). Returns it unchanged when it already fits.
+ */
+async function fitWithin(bitmap: ImageBitmap, maxSize: number): Promise<ImageBitmap> {
+  const largest = Math.max(bitmap.width, bitmap.height);
+  if (largest <= maxSize) return bitmap;
+  const scale = maxSize / largest;
+  const resized = await createImageBitmap(bitmap, {
+    ...DECODE_OPTIONS,
+    resizeWidth: Math.round(bitmap.width * scale),
+    resizeHeight: Math.round(bitmap.height * scale),
+    resizeQuality: "high",
+  });
+  bitmap.close();
+  return resized;
 }
 
 function looksLikeImage(name: string) {
