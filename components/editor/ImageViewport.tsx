@@ -10,9 +10,11 @@ import {
 } from "react";
 import type { Adjustments } from "@/lib/adjustments";
 import { type CropRect, fullRect } from "@/lib/crop";
+import { exportDimensions, type ExportSize } from "@/lib/exportSize";
 import type { LoadedImage } from "@/lib/image";
 import { encodeJpeg, type RawPixels } from "@/lib/jpeg/encoder";
 import { encodePng } from "@/lib/png/encoder";
+import { resizePixels } from "@/lib/resize/resizer";
 import { encodeWebp, WEBP_MAX_DIMENSION } from "@/lib/webp/encoder";
 import { Renderer } from "@/lib/webgl/renderer";
 import { CropOverlay } from "./CropOverlay";
@@ -31,16 +33,24 @@ export interface ExportResult {
    * because ours (MozJPEG, OxiPNG, libwebp) couldn't run.
    */
   usedBuiltInEncoder: boolean;
+  /**
+   * True when a smaller export had to be scaled by the GPU (as the preview
+   * is) because the Lanczos resizer couldn't run.
+   */
+  usedBuiltInResize: boolean;
+  /** Time spent reading back and resizing the source, in ms (0 at full size). */
+  resizeMs: number;
 }
 
 export interface ViewportHandle {
   maxTextureSize: number;
   /**
-   * Render at full resolution (of the crop, if there is one) and encode.
-   * `quality` is 0..1. JPEGs go through MozJPEG, PNGs through OxiPNG and WebPs
-   * through libwebp, with the browser's encoder as the fallback for all three.
+   * Render the crop (or the whole image) and encode it, at full resolution or
+   * with its long edge scaled down to `longEdge`. `quality` is 0..1. JPEGs go
+   * through MozJPEG, PNGs through OxiPNG and WebPs through libwebp, with the
+   * browser's encoder as the fallback for all three.
    */
-  exportBlob(type: string, quality?: number): Promise<ExportResult>;
+  exportBlob(type: string, quality?: number, longEdge?: ExportSize): Promise<ExportResult>;
 }
 
 interface Props {
@@ -152,18 +162,20 @@ export function ImageViewport({
       get maxTextureSize() {
         return rendererRef.current?.maxTextureSize ?? 4096;
       },
-      async exportBlob(type: string, quality = 0.92) {
+      async exportBlob(type: string, quality = 0.92, longEdge: ExportSize = null) {
         const r = rendererRef.current;
         const canvas = canvasRef.current;
         if (!r || !canvas || !image) throw new Error("No image to export.");
-        if (type === "image/webp" && (cropW > WEBP_MAX_DIMENSION || cropH > WEBP_MAX_DIMENSION)) {
+        // The exported picture is the crop, either at one output pixel per
+        // image pixel or scaled down to `longEdge`.
+        const output: CropRect = { x: cropX, y: cropY, width: cropW, height: cropH };
+        const size = exportDimensions(cropW, cropH, longEdge);
+        const resizing = size.width !== cropW || size.height !== cropH;
+        if (type === "image/webp" && (size.width > WEBP_MAX_DIMENSION || size.height > WEBP_MAX_DIMENSION)) {
           throw new Error(
-            `WebP images can be at most ${WEBP_MAX_DIMENSION} pixels on a side. Crop the photo or export as JPEG or PNG.`,
+            `WebP images can be at most ${WEBP_MAX_DIMENSION} pixels on a side. Choose a smaller export size or export as JPEG or PNG.`,
           );
         }
-        // The exported picture is the crop, at one output pixel per image pixel.
-        const output: CropRect = { x: cropX, y: cropY, width: cropW, height: cropH };
-        const full = { width: cropW, height: cropH, view: output, crop: output };
         const restore = () =>
           r.render(adjustments, {
             width: pixelW,
@@ -172,24 +184,61 @@ export function ImageViewport({
             view: { x: viewX, y: viewY, width: viewW, height: viewH },
             crop: output,
           });
-        const builtIn = () =>
-          new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, type, quality));
+        const readPixels = () => {
+          try {
+            return r.readPixels();
+          } catch {
+            return null; // e.g. not enough memory for the readback buffer
+          }
+        };
+
+        // A smaller export first resamples the *unedited* crop to the output
+        // size with Lanczos (in a worker), then runs the edit on that 1:1.
+        // Resampling the finished picture instead would average away
+        // sharpening and grain, which are sized in output pixels, and the file
+        // would no longer look like the preview.
+        let source: RawPixels | null = null;
+        let usedBuiltInResize = false;
+        let resizeMs = 0;
+        if (resizing) {
+          const started = performance.now();
+          r.render(adjustments, { width: cropW, height: cropH, view: output, crop: output, bypass: true });
+          const original = readPixels();
+          restore();
+          if (original) {
+            try {
+              source = await resizePixels({ ...original, flipY: true }, size.width, size.height);
+            } catch (e) {
+              console.warn("[export] Lanczos resize unavailable, using the GPU's downscaling:", e);
+            }
+          }
+          usedBuiltInResize = source === null;
+          resizeMs = performance.now() - started;
+        }
+
+        /** Render the export picture into the canvas, then run `then` before anything redraws it. */
+        const drawExport = <T,>(then: () => T): T => {
+          if (source) {
+            const s = source;
+            return r.withSource(s, () => {
+              r.render(adjustments, size);
+              return then();
+            });
+          }
+          // Without a resampled source the GPU scales the crop itself, as for
+          // the preview: softer, but the same picture.
+          r.render(adjustments, { ...size, view: output, crop: output });
+          return then();
+        };
 
         let blob: Blob | null = null;
         let usedBuiltInEncoder = false;
 
         const encoder = ENCODERS[type];
         if (encoder) {
-          // Read the full-size render back and hand it to our encoder in its
-          // worker. The display render is restored first: the pixels are
-          // already copied.
-          r.render(adjustments, full);
-          let pixels: ReturnType<Renderer["readPixels"]> = null;
-          try {
-            pixels = r.readPixels();
-          } catch {
-            pixels = null; // e.g. not enough memory for the readback buffer
-          }
+          // Read the render back and hand it to our encoder in its worker. The
+          // display render is restored first: the pixels are already copied.
+          const pixels = drawExport(readPixels);
           restore();
           if (pixels) {
             const raw = { ...pixels, flipY: true };
@@ -204,8 +253,9 @@ export function ImageViewport({
 
         if (!blob) {
           // toBlob snapshots the canvas when called, so render right before it.
-          r.render(adjustments, full);
-          const result = builtIn();
+          const result = drawExport(
+            () => new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, type, quality)),
+          );
           restore();
           blob = await result;
         }
@@ -215,7 +265,7 @@ export function ImageViewport({
         if (blob.type !== type) {
           throw new Error("This browser can't write that format. Try exporting as JPEG or PNG.");
         }
-        return { blob, usedBuiltInEncoder };
+        return { blob, usedBuiltInEncoder, usedBuiltInResize, resizeMs };
       },
     }),
     [image, adjustments, pixelW, pixelH, compare, viewX, viewY, viewW, viewH, cropX, cropY, cropW, cropH],

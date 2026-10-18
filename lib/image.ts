@@ -99,13 +99,18 @@ export async function loadImageFile(
     );
   }
 
+  // Keep colours unpremultiplied: the GPU upload, the shader and every encoder
+  // treat RGB as straight colour. By default the bitmap would hold RGB already
+  // multiplied by alpha, which darkens every semi-transparent pixel (dark
+  // fringes around cut-outs, 255 red at half alpha exported as 128).
+  const decodeOptions: ImageBitmapOptions = { premultiplyAlpha: "none" };
   let bitmap: ImageBitmap;
   try {
-    bitmap = await createImageBitmap(file, { imageOrientation: "from-image" });
+    bitmap = await createImageBitmap(file, { ...decodeOptions, imageOrientation: "from-image" });
   } catch {
     // Safari < 17 lacks imageOrientation support; fall back.
     try {
-      bitmap = await createImageBitmap(file);
+      bitmap = await createImageBitmap(file, decodeOptions);
     } catch {
       throw new UnsupportedImageError(
         `Couldn't decode "${file.name}". The browser doesn't support this format.`,
@@ -120,6 +125,7 @@ export async function loadImageFile(
   if (largest > maxSize) {
     const scale = maxSize / largest;
     const resized = await createImageBitmap(bitmap, {
+      ...decodeOptions,
       resizeWidth: Math.round(sourceWidth * scale),
       resizeHeight: Math.round(sourceHeight * scale),
       resizeQuality: "high",

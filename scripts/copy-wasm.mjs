@@ -12,6 +12,8 @@
 // - public/webp/     WebP encoder: our own small worker (lib/webp/webp.worker.js)
 //                    plus both builds of the libwebp codec (SIMD and plain; the
 //                    worker picks one) from the same folder.
+// - public/resize/   Lanczos resizer for smaller exports: our own small worker
+//                    (lib/resize/resize.worker.js) plus the resize codec.
 //
 // Each folder is also served with its own Content Security Policy (see
 // next.config.ts), which is the other reason these stay static files.
@@ -45,6 +47,12 @@ const files = [
   ["node_modules/@jsquash/webp/codec/enc/webp_enc.wasm", "webp/webp_enc.wasm"],
   ["node_modules/@jsquash/webp/LICENSE", "webp/LICENSE.txt"],
   ["node_modules/@jsquash/webp/codec/LICENSE.codec.md", "webp/LICENSE.codec.md"],
+
+  ["lib/resize/resize.worker.js", "resize/worker.js"],
+  ["node_modules/@jsquash/resize/lib/resize/pkg/squoosh_resize.js", "resize/squoosh_resize.js"],
+  ["node_modules/@jsquash/resize/lib/resize/pkg/squoosh_resize_bg.wasm", "resize/squoosh_resize_bg.wasm"],
+  ["node_modules/@jsquash/resize/LICENSE", "resize/LICENSE.txt"],
+  ["node_modules/@jsquash/resize/lib/resize/LICENSE.codec.md", "resize/LICENSE.codec.md"],
 ];
 
 for (const [source, target] of files) {

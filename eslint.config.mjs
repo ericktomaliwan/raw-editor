@@ -17,6 +17,7 @@ const eslintConfig = defineConfig([
     "public/mozjpeg/**",
     "public/oxipng/**",
     "public/webp/**",
+    "public/resize/**",
   ]),
 ]);
 

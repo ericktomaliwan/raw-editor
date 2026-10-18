@@ -81,29 +81,33 @@ export class Renderer {
   }
 
   setImage(source: ImageBitmap | HTMLImageElement | HTMLCanvasElement) {
-    const gl = this.gl;
-    if (this.imageTex) gl.deleteTexture(this.imageTex);
-    const tex = gl.createTexture();
-    if (!tex) throw new Error("Failed to create texture");
-    this.imageTex = tex;
-    gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, tex);
-    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
-    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
-    gl.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL, gl.NONE);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, source);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-    gl.texParameteri(
-      gl.TEXTURE_2D,
-      gl.TEXTURE_MIN_FILTER,
-      gl.LINEAR_MIPMAP_LINEAR,
-    );
-    // Mip chain doubles as the blur pyramid for clarity/texture/dehaze.
-    gl.generateMipmap(gl.TEXTURE_2D);
+    if (this.imageTex) this.gl.deleteTexture(this.imageTex);
+    this.imageTex = this.uploadImage(source);
     this.imageWidth = source.width;
     this.imageHeight = source.height;
+  }
+
+  /**
+   * Run `fn` with `pixels` (tightly packed RGBA, top row first) standing in
+   * for the image, then put the image back. For exports at a reduced size: the
+   * source is resampled to the output size first, and rendering it 1:1 keeps
+   * every output-relative effect (sharpen, presence, grain) at the scale the
+   * preview shows. Synchronous, so no display render can happen in between.
+   */
+  withSource<T>(pixels: { data: Uint8Array; width: number; height: number }, fn: () => T): T {
+    const saved = { tex: this.imageTex, width: this.imageWidth, height: this.imageHeight };
+    const tex = this.uploadImage(pixels);
+    this.imageTex = tex;
+    this.imageWidth = pixels.width;
+    this.imageHeight = pixels.height;
+    try {
+      return fn();
+    } finally {
+      this.imageTex = saved.tex;
+      this.imageWidth = saved.width;
+      this.imageHeight = saved.height;
+      this.gl.deleteTexture(tex);
+    }
   }
 
   render(adj: Adjustments, opts: RenderOptions = {}) {
@@ -164,6 +168,46 @@ export class Renderer {
   }
 
   // ----- internals -----
+
+  private uploadImage(
+    source: ImageBitmap | HTMLImageElement | HTMLCanvasElement | { data: Uint8Array; width: number; height: number },
+  ): WebGLTexture {
+    const gl = this.gl;
+    const tex = gl.createTexture();
+    if (!tex) throw new Error("Failed to create texture");
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+    gl.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL, gl.NONE);
+    if ("data" in source) {
+      gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+      gl.texImage2D(
+        gl.TEXTURE_2D,
+        0,
+        gl.RGBA8,
+        source.width,
+        source.height,
+        0,
+        gl.RGBA,
+        gl.UNSIGNED_BYTE,
+        source.data,
+      );
+    } else {
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, source);
+    }
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(
+      gl.TEXTURE_2D,
+      gl.TEXTURE_MIN_FILTER,
+      gl.LINEAR_MIPMAP_LINEAR,
+    );
+    // Mip chain doubles as the blur pyramid for clarity/texture/dehaze.
+    gl.generateMipmap(gl.TEXTURE_2D);
+    return tex;
+  }
 
   private uploadCurveIfChanged(adj: Adjustments) {
     const key = JSON.stringify([

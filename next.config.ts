@@ -50,7 +50,8 @@ const PAGE_CSP = contentSecurityPolicy(
 const DECODER_CSP = contentSecurityPolicy("'self' 'unsafe-eval'");
 
 /**
- * Same idea for the JPEG, PNG and WebP encoder workers under /mozjpeg, /oxipng and /webp.
+ * Same idea for the JPEG, PNG and WebP encoder workers under /mozjpeg, /oxipng
+ * and /webp, and the export resizer under /resize.
  * Their glue code needs no eval, so the narrower `'wasm-unsafe-eval'` (compile
  * WebAssembly, nothing else) is enough.
  */
@@ -92,6 +93,10 @@ const nextConfig: NextConfig = {
       },
       {
         source: "/webp/:path*",
+        headers: [{ key: "Content-Security-Policy", value: ENCODER_CSP }],
+      },
+      {
+        source: "/resize/:path*",
         headers: [{ key: "Content-Security-Policy", value: ENCODER_CSP }],
       },
       {

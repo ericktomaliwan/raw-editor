@@ -263,8 +263,8 @@ export default function AboutPage() {
               headline="Full-resolution export"
               subheadline={
                 <p>
-                  Save as JPEG, PNG or WebP at the photo&apos;s full size. JPEG and WebP take a quality setting
-                  you choose, for smaller files at lower settings.
+                  Save as JPEG, PNG or WebP at the photo&apos;s full size, or scaled down to a long edge you pick.
+                  JPEG and WebP take a quality setting you choose, for smaller files at lower settings.
                 </p>
               }
             />

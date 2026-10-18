@@ -17,6 +17,7 @@ import {
   resolveAspect,
 } from "@/lib/crop";
 import { collectDroppedFiles, type DroppedFile } from "@/lib/dropFiles";
+import { exportDimensions, type ExportSize } from "@/lib/exportSize";
 import {
   isRawFile,
   isXmpFile,
@@ -58,6 +59,11 @@ const FORMAT_LABELS: Record<ExportFormat, string> = {
   "image/png": "PNG",
   "image/webp": "WebP",
 };
+/**
+ * Extra time for a smaller export, per megapixel of the *full-size* crop: the
+ * source readback plus the Lanczos resize (about 60 ms/MP on its own).
+ */
+const RESIZE_MS_PER_MEGAPIXEL = 80;
 /** Floor for the estimate, so the bar is still seen to move on a tiny image. */
 const EXPORT_ESTIMATE_MIN_MS = 400;
 
@@ -65,6 +71,7 @@ export function Editor() {
   const viewportRef = useRef<ViewportHandle>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const builtInEncoderNoticeShown = useRef(false);
+  const builtInResizeNoticeShown = useRef(false);
 
   const [image, setImage] = useState<LoadedImage | null>(null);
   // The edit itself (adjustments, active preset, crop, crop ratio) lives in an
@@ -90,8 +97,11 @@ export function Editor() {
   const [exportEstimate, setExportEstimate] = useState<number | null>(null);
   /** Measured ms per megapixel of the last export in each format, for the next estimate. */
   const exportRates = useRef<Partial<Record<ExportFormat, number>>>({});
+  /** Measured ms per full-size megapixel of the last resize, for the next estimate. */
+  const resizeRate = useRef<number | null>(null);
   const [exportFormat, setExportFormat] = useState<ExportFormat>("image/jpeg");
   const [quality, setQuality] = useState(QUALITY_DEFAULT);
+  const [exportSize, setExportSize] = useState<ExportSize>(null);
   const [toast, setToast] = useState<{ message: string; kind: "error" | "info" } | null>(null);
 
   // ----- toast -----
@@ -365,18 +375,33 @@ export function Editor() {
   // ----- export -----
   const exportImage = async () => {
     if (!image || !viewportRef.current) return;
-    const megapixels = ((crop?.width ?? image.width) * (crop?.height ?? image.height)) / 1e6;
+    const fullW = crop?.width ?? image.width;
+    const fullH = crop?.height ?? image.height;
+    const size = exportDimensions(fullW, fullH, exportSize);
+    const resizing = size.width !== fullW || size.height !== fullH;
+    const fullMegapixels = (fullW * fullH) / 1e6;
+    const megapixels = (size.width * size.height) / 1e6;
     const rate = exportRates.current[exportFormat] ?? EXPORT_MS_PER_MEGAPIXEL[exportFormat];
-    setExportEstimate(Math.max(EXPORT_ESTIMATE_MIN_MS, megapixels * rate));
+    const resizeEstimate = resizing ? fullMegapixels * (resizeRate.current ?? RESIZE_MS_PER_MEGAPIXEL) : 0;
+    setExportEstimate(Math.max(EXPORT_ESTIMATE_MIN_MS, megapixels * rate + resizeEstimate));
     const started = performance.now();
     try {
       // The quality field applies to JPEG and WebP; PNG is lossless (the
       // encoder ignores the value).
-      const { blob, usedBuiltInEncoder } = await viewportRef.current.exportBlob(
+      const { blob, usedBuiltInEncoder, usedBuiltInResize, resizeMs } = await viewportRef.current.exportBlob(
         exportFormat,
         hasQuality(exportFormat) ? quality / 100 : 1,
+        exportSize,
       );
-      exportRates.current[exportFormat] = (performance.now() - started) / megapixels;
+      exportRates.current[exportFormat] = (performance.now() - started - resizeMs) / megapixels;
+      if (resizing && !usedBuiltInResize) resizeRate.current = resizeMs / fullMegapixels;
+      if (usedBuiltInResize && !builtInResizeNoticeShown.current) {
+        builtInResizeNoticeShown.current = true;
+        notify(
+          "The high-quality resizer couldn't run here, so the photo was scaled the way the preview is. It may look a little softer.",
+          "info",
+        );
+      }
       // The export still succeeds, just less tightly compressed. Say so once.
       if (usedBuiltInEncoder && !builtInEncoderNoticeShown.current) {
         builtInEncoderNoticeShown.current = true;
@@ -389,7 +414,8 @@ export function Editor() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `${stripExtension(image.name)}-edited.${ext}`;
+      const suffix = resizing ? `-${size.width}x${size.height}` : "";
+      a.download = `${stripExtension(image.name)}-edited${suffix}.${ext}`;
       a.click();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (e) {
@@ -457,11 +483,14 @@ export function Editor() {
           exporting={exportEstimate !== null}
           exportFormat={exportFormat}
           quality={quality}
+          exportSize={exportSize}
+          fullLongEdge={image ? Math.max(crop?.width ?? image.width, crop?.height ?? image.height) : null}
           onOpen={() => fileInputRef.current?.click()}
           onCompareChange={setCompare}
           onReset={resetAll}
           onFormatChange={setExportFormat}
           onQualityChange={setQuality}
+          onExportSizeChange={setExportSize}
           onExport={exportImage}
         />
         <ExportProgress estimateMs={exportEstimate} />

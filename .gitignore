@@ -46,6 +46,7 @@ next-env.d.ts
 /public/mozjpeg/
 /public/oxipng/
 /public/webp/
+/public/resize/
 
 # local AI assistant notes
 CLAUDE.md

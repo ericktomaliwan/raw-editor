@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useId, useRef, useState } from "react";
+import { EXPORT_SIZES, type ExportSize } from "@/lib/exportSize";
 
 export type ExportFormat = "image/jpeg" | "image/png" | "image/webp";
 
@@ -24,12 +25,16 @@ interface Props {
   exporting: boolean;
   exportFormat: ExportFormat;
   quality: number;
+  exportSize: ExportSize;
+  /** Long edge of the picture an export would save at full size (the crop), or null with no image. */
+  fullLongEdge: number | null;
   onOpen: () => void;
   /** Show (true) or hide (false) the original image. */
   onCompareChange: (showOriginal: boolean) => void;
   onReset: () => void;
   onFormatChange: (format: ExportFormat) => void;
   onQualityChange: (quality: number) => void;
+  onExportSizeChange: (size: ExportSize) => void;
   onExport: () => Promise<void>;
 }
 
@@ -62,11 +67,14 @@ function InlineActions({
   exporting,
   exportFormat,
   quality,
+  exportSize,
+  fullLongEdge,
   onOpen,
   onCompareChange,
   onReset,
   onFormatChange,
   onQualityChange,
+  onExportSizeChange,
   onExport,
 }: Props) {
   return (
@@ -100,6 +108,12 @@ function InlineActions({
         {hasQuality(exportFormat) && (
           <QualityField variant="inline" value={quality} onCommit={onQualityChange} />
         )}
+        <SizeSelect
+          variant="inline"
+          value={exportSize}
+          fullLongEdge={fullLongEdge}
+          onChange={onExportSizeChange}
+        />
         <button
           type="button"
           disabled={!hasImage || exporting}
@@ -147,11 +161,14 @@ function HamburgerMenu({
   exporting,
   exportFormat,
   quality,
+  exportSize,
+  fullLongEdge,
   onOpen,
   onCompareChange,
   onReset,
   onFormatChange,
   onQualityChange,
+  onExportSizeChange,
   onExport,
 }: Props) {
   const [open, setOpen] = useState(false);
@@ -262,6 +279,12 @@ function HamburgerMenu({
           {hasQuality(exportFormat) && (
             <QualityField variant="row" value={quality} onCommit={onQualityChange} />
           )}
+          <SizeSelect
+            variant="row"
+            value={exportSize}
+            fullLongEdge={fullLongEdge}
+            onChange={onExportSizeChange}
+          />
           <div className="px-1 pb-1 pt-1.5">
             <button
               type="button"
@@ -330,6 +353,52 @@ function CheckIcon() {
     >
       <path d="M2.5 6.5l2.5 2.5 4.5-5.5" />
     </svg>
+  );
+}
+
+/**
+ * Export size: full, or a long edge in pixels. Sizes that wouldn't shrink the
+ * current picture are disabled (exports are never enlarged); if the chosen one
+ * becomes such a size, say after a tighter crop, the export is simply full size.
+ */
+function SizeSelect({
+  variant,
+  value,
+  fullLongEdge,
+  onChange,
+}: {
+  variant: "inline" | "row";
+  value: ExportSize;
+  fullLongEdge: number | null;
+  onChange: (size: ExportSize) => void;
+}) {
+  const hint = "Export size: the long edge of the saved file, in pixels";
+  const select = (
+    <select
+      value={value ?? "full"}
+      onChange={(e) => onChange(e.target.value === "full" ? null : Number(e.target.value))}
+      className={
+        variant === "inline"
+          ? "border-l border-zinc-700 bg-zinc-900 px-2 text-[11px] text-zinc-300 outline-none"
+          : "rounded border border-zinc-700 bg-zinc-950 px-2 py-1 text-[11px] text-zinc-200 outline-none focus:border-zinc-500"
+      }
+      aria-label={variant === "inline" ? hint : undefined}
+      title={hint}
+    >
+      <option value="full">{fullLongEdge ? `Full (${fullLongEdge} px)` : "Full size"}</option>
+      {EXPORT_SIZES.map((edge) => (
+        <option key={edge} value={edge} disabled={fullLongEdge !== null && edge >= fullLongEdge}>
+          {edge} px
+        </option>
+      ))}
+    </select>
+  );
+  if (variant === "inline") return select;
+  return (
+    <label className="flex items-center justify-between gap-3 px-2.5 py-1.5 text-xs text-zinc-300" title={hint}>
+      Size
+      {select}
+    </label>
   );
 }
 
