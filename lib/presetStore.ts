@@ -12,6 +12,12 @@ const EMPTY: Preset[] = [];
 const listeners = new Set<() => void>();
 let cachedRaw: string | null | undefined;
 let cachedValue: Preset[] = EMPTY;
+/**
+ * Set when the browser refused to save the presets (storage full, or blocked
+ * outright). This tab then keeps them in memory, so what was just imported
+ * doesn't vanish; a later save that works switches back to storage.
+ */
+let memoryOnly: Preset[] | null = null;
 
 /**
  * localStorage is not a trusted source: it can hold data written by an older
@@ -44,8 +50,10 @@ function parseStored(raw: string): Preset[] {
   return out;
 }
 
-function read(): Preset[] {
+/** The imported presets: from storage, or from memory if storage refused them. */
+export function readImportedPresets(): Preset[] {
   if (typeof window === "undefined") return EMPTY;
+  if (memoryOnly) return memoryOnly;
   let raw: string | null = null;
   try {
     raw = localStorage.getItem(STORAGE_KEY);
@@ -62,15 +70,20 @@ function read(): Preset[] {
   return cachedValue;
 }
 
-function write(next: Preset[]) {
+/** Save the presets and tell subscribers. Returns false if storage refused them. */
+function write(next: Preset[]): boolean {
+  let saved: boolean;
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+    memoryOnly = null;
+    saved = true;
   } catch {
-    /* quota exceeded / private mode: keep in-memory only */
-    cachedRaw = undefined;
-    cachedValue = next;
+    // Quota exceeded, or storage blocked: keep them for this tab instead.
+    memoryOnly = next;
+    saved = false;
   }
   for (const l of listeners) l();
+  return saved;
 }
 
 function subscribe(listener: () => void) {
@@ -85,10 +98,16 @@ function subscribe(listener: () => void) {
   };
 }
 
-const update = (fn: (prev: Preset[]) => Preset[]) => write(fn(read()));
+/**
+ * Change the imported presets. Returns false when they couldn't be saved: they
+ * still apply, but only until this tab is closed.
+ */
+export function updateImportedPresets(fn: (prev: Preset[]) => Preset[]): boolean {
+  return write(fn(readImportedPresets()));
+}
 const getServerSnapshot = () => EMPTY;
 
-export function useImportedPresets(): [Preset[], typeof update] {
-  const presets = useSyncExternalStore(subscribe, read, getServerSnapshot);
-  return [presets, update];
+export function useImportedPresets(): [Preset[], typeof updateImportedPresets] {
+  const presets = useSyncExternalStore(subscribe, readImportedPresets, getServerSnapshot);
+  return [presets, updateImportedPresets];
 }

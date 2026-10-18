@@ -79,9 +79,15 @@ function InlineActions({
       <HeaderButton
         disabled={!hasImage}
         active={compare}
-        onMouseDown={() => onCompareChange(true)}
-        onMouseUp={() => onCompareChange(false)}
-        onMouseLeave={() => onCompareChange(false)}
+        // Pointer events, not mouse events: on a touch screen the browser only
+        // sends the mouse ones after the finger lifts, so holding showed nothing.
+        onPointerDown={(e) => e.button === 0 && onCompareChange(true)}
+        onPointerUp={() => onCompareChange(false)}
+        onPointerLeave={() => onCompareChange(false)}
+        onPointerCancel={() => onCompareChange(false)}
+        // A long press would otherwise open a context menu or select the label.
+        onContextMenu={(e) => e.preventDefault()}
+        className="touch-none select-none"
         title="Hold to see the original (or press \)"
       >
         Before

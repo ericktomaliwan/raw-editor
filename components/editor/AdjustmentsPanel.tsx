@@ -26,8 +26,25 @@ import { Slider } from "./Slider";
 
 interface Props {
   adjustments: Adjustments;
+  /** A slider or toggle moved. Repeated changes to the same settings merge into one undo step. */
   onChange: (patch: Partial<Adjustments>) => void;
+  /** A section's Reset (or Clear): always an undo step of its own, never merged. */
+  onReset: (patch: Partial<Adjustments>) => void;
   disabled?: boolean;
+}
+
+const NO_POINT_CURVES: Partial<Adjustments> = {
+  toneCurve: [],
+  toneCurveRed: [],
+  toneCurveGreen: [],
+  toneCurveBlue: [],
+};
+
+/** The default value of each of `keys`, as one patch. */
+function defaultsFor(keys: readonly NumericKey[]): Partial<Adjustments> {
+  const patch: Partial<Record<NumericKey, number>> = {};
+  for (const k of keys) patch[k] = DEFAULT_ADJUSTMENTS[k];
+  return patch;
 }
 
 const WB_TRACKS: Partial<Record<NumericKey, string>> = {
@@ -45,14 +62,10 @@ const WB_TRACKS: Partial<Record<NumericKey, string>> = {
 const HUE_TRACK =
   "linear-gradient(90deg,#f00 0%,#ff0 17%,#0f0 33%,#0ff 50%,#00f 67%,#f0f 83%,#f00 100%)";
 
-export function AdjustmentsPanel({ adjustments: a, onChange, disabled }: Props) {
+export function AdjustmentsPanel({ adjustments: a, onChange, onReset, disabled }: Props) {
   const isModified = (keys: readonly NumericKey[]) =>
     keys.some((k) => a[k] !== DEFAULT_ADJUSTMENTS[k]);
-  const resetKeys = (keys: readonly NumericKey[]) => {
-    const patch: Partial<Adjustments> = {};
-    for (const k of keys) (patch as Record<NumericKey, number>)[k] = DEFAULT_ADJUSTMENTS[k];
-    onChange(patch);
-  };
+  const resetKeys = (keys: readonly NumericKey[]) => onReset(defaultsFor(keys));
   const sliders = (specs: SliderSpec[]) =>
     specs.map((s) => (
       <Slider
@@ -101,10 +114,7 @@ export function AdjustmentsPanel({ adjustments: a, onChange, disabled }: Props) 
       <Section
         title="Basic"
         modified={isModified(basicKeys) || a.grayscale}
-        onReset={() => {
-          resetKeys(basicKeys);
-          onChange({ grayscale: false });
-        }}
+        onReset={() => onReset({ ...defaultsFor(basicKeys), grayscale: false })}
       >
         <div className="flex items-center gap-2 text-xs">
           <span className="text-zinc-500">Treatment</span>
@@ -129,10 +139,7 @@ export function AdjustmentsPanel({ adjustments: a, onChange, disabled }: Props) 
         title="Tone Curve"
         defaultOpen={false}
         modified={isModified(curveKeys) || pointCurve}
-        onReset={() => {
-          resetKeys(curveKeys);
-          onChange({ toneCurve: [], toneCurveRed: [], toneCurveGreen: [], toneCurveBlue: [] });
-        }}
+        onReset={() => onReset({ ...defaultsFor(curveKeys), ...NO_POINT_CURVES })}
       >
         {sliders(PARAMETRIC_CURVE)}
         {pointCurve && (
@@ -141,14 +148,7 @@ export function AdjustmentsPanel({ adjustments: a, onChange, disabled }: Props) 
             <button
               type="button"
               className="text-zinc-300 hover:text-white"
-              onClick={() =>
-                onChange({
-                  toneCurve: [],
-                  toneCurveRed: [],
-                  toneCurveGreen: [],
-                  toneCurveBlue: [],
-                })
-              }
+              onClick={() => onReset(NO_POINT_CURVES)}
             >
               Clear
             </button>
@@ -161,7 +161,7 @@ export function AdjustmentsPanel({ adjustments: a, onChange, disabled }: Props) 
         defaultOpen={false}
         modified={hslModified}
         onReset={() =>
-          onChange({
+          onReset({
             hslHue: { ...DEFAULT_ADJUSTMENTS.hslHue },
             hslSaturation: { ...DEFAULT_ADJUSTMENTS.hslSaturation },
             hslLuminance: { ...DEFAULT_ADJUSTMENTS.hslLuminance },

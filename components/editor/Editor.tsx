@@ -90,11 +90,14 @@ export function Editor() {
         }
       }
       if (added.length) {
-        persistPresets((prev) => [...prev, ...added]);
+        const saved = persistPresets((prev) => [...prev, ...added]);
+        const imported = `Imported ${added.length} preset${added.length === 1 ? "" : "s"}${
+          added.length === 1 ? `: ${added[0].name}` : ""
+        }`;
         notify(
-          `Imported ${added.length} preset${added.length === 1 ? "" : "s"}${
-            added.length === 1 ? `: ${added[0].name}` : ""
-          }`,
+          saved
+            ? imported
+            : `${imported}. This browser won't let them be saved, so they'll be gone when you close this tab.`,
           "info",
         );
       }
@@ -125,14 +128,17 @@ export function Editor() {
   const exporter = useExport({ viewportRef, image, adjustments, crop, notify });
 
   // ----- adjustments -----
-  const updateAdjustments = (patch: Partial<Adjustments>) => {
+  const patchAdjustments = (patch: Partial<Adjustments>, key?: string) =>
     apply(
       (prev) => ({ ...prev, adjustments: { ...prev.adjustments, ...patch }, activePresetId: null }),
-      // Keyed by which settings changed, so dragging one slider is one undo
-      // step, and moving on to another slider starts the next.
-      `adjust:${Object.keys(patch).sort().join(",")}`,
+      key,
     );
-  };
+  // Keyed by which settings changed, so dragging one slider is one undo step,
+  // and moving on to another slider starts the next.
+  const updateAdjustments = (patch: Partial<Adjustments>) =>
+    patchAdjustments(patch, `adjust:${Object.keys(patch).sort().join(",")}`);
+  /** A section's Reset: a discrete action, so no key and an undo step of its own. */
+  const resetAdjustments = (patch: Partial<Adjustments>) => patchAdjustments(patch);
   /** The nav's Reset: back to the photo as it was opened, crop included. */
   const resetAll = () => {
     apply(() => ({
@@ -350,6 +356,7 @@ export function Editor() {
           <AdjustmentsPanel
             adjustments={adjustments}
             onChange={updateAdjustments}
+            onReset={resetAdjustments}
             disabled={!image}
           />
           <div className="px-4 py-3 text-[11px] leading-relaxed text-zinc-600">

@@ -104,12 +104,14 @@ export function PresetsPanel({
                     >
                       {p.name}
                     </button>
-                    {/* Only the user's own presets can be removed. */}
+                    {/* Only the user's own presets can be removed. The button shows
+                        on hover, while the preset or the button has keyboard focus,
+                        and always on touch screens, which have no hover. */}
                     {p.source === "imported" && (
                       <button
                         type="button"
                         onClick={() => onRemove(p.id)}
-                        className="absolute -right-1 -top-1 hidden h-4 w-4 items-center justify-center rounded-full bg-zinc-700 text-[10px] text-zinc-200 hover:bg-red-600 group-hover/preset:flex"
+                        className="absolute -right-1 -top-1 hidden h-4 w-4 items-center justify-center rounded-full bg-zinc-700 text-[10px] text-zinc-200 hover:bg-red-600 group-focus-within/preset:flex group-hover/preset:flex pointer-coarse:flex"
                         title="Remove preset"
                         aria-label={`Remove ${p.name}`}
                       >
