@@ -40,7 +40,16 @@ import { ImageViewport, type ViewportHandle } from "./ImageViewport";
 import { PresetsPanel } from "./PresetsPanel";
 
 /** Input types that hold no text, so Cmd/Ctrl+Z on them can mean "undo the edit". */
-const NON_TEXT_INPUTS = new Set(["range", "checkbox", "radio", "button", "submit", "reset", "file", "color"]);
+const NON_TEXT_INPUTS = new Set([
+  "range",
+  "checkbox",
+  "radio",
+  "button",
+  "submit",
+  "reset",
+  "file",
+  "color",
+]);
 
 /**
  * Rough export time in milliseconds per megapixel on a fast laptop. It only
@@ -326,7 +335,11 @@ export function Editor() {
     apply((prev) => {
       if (ratio === null) return { ...prev, aspect: choice };
       const reshaped = applyAspect(prev.crop ?? fullRect(width, height), ratio, width, height);
-      return { ...prev, aspect: choice, crop: isFullRect(reshaped, width, height) ? null : reshaped };
+      return {
+        ...prev,
+        aspect: choice,
+        crop: isFullRect(reshaped, width, height) ? null : reshaped,
+      };
     });
   };
 
@@ -362,7 +375,8 @@ export function Editor() {
       // While typing in a text field, the shortcut belongs to the field: it
       // undoes the typing. (Sliders are inputs too, but not text ones.)
       const t = e.target;
-      if (t instanceof HTMLTextAreaElement || (t instanceof HTMLElement && t.isContentEditable)) return;
+      if (t instanceof HTMLTextAreaElement || (t instanceof HTMLElement && t.isContentEditable))
+        return;
       if (t instanceof HTMLInputElement && !NON_TEXT_INPUTS.has(t.type)) return;
       e.preventDefault();
       if (isUndo) undo();
@@ -382,17 +396,20 @@ export function Editor() {
     const fullMegapixels = (fullW * fullH) / 1e6;
     const megapixels = (size.width * size.height) / 1e6;
     const rate = exportRates.current[exportFormat] ?? EXPORT_MS_PER_MEGAPIXEL[exportFormat];
-    const resizeEstimate = resizing ? fullMegapixels * (resizeRate.current ?? RESIZE_MS_PER_MEGAPIXEL) : 0;
+    const resizeEstimate = resizing
+      ? fullMegapixels * (resizeRate.current ?? RESIZE_MS_PER_MEGAPIXEL)
+      : 0;
     setExportEstimate(Math.max(EXPORT_ESTIMATE_MIN_MS, megapixels * rate + resizeEstimate));
     const started = performance.now();
     try {
       // The quality field applies to JPEG and WebP; PNG is lossless (the
       // encoder ignores the value).
-      const { blob, usedBuiltInEncoder, usedBuiltInResize, resizeMs } = await viewportRef.current.exportBlob(
-        exportFormat,
-        hasQuality(exportFormat) ? quality / 100 : 1,
-        exportSize,
-      );
+      const { blob, usedBuiltInEncoder, usedBuiltInResize, resizeMs } =
+        await viewportRef.current.exportBlob(
+          exportFormat,
+          hasQuality(exportFormat) ? quality / 100 : 1,
+          exportSize,
+        );
       exportRates.current[exportFormat] = (performance.now() - started - resizeMs) / megapixels;
       if (resizing && !usedBuiltInResize) resizeRate.current = resizeMs / fullMegapixels;
       if (usedBuiltInResize && !builtInResizeNoticeShown.current) {
@@ -410,7 +427,8 @@ export function Editor() {
           "info",
         );
       }
-      const ext =exportFormat === "image/png" ? "png" : exportFormat === "image/webp" ? "webp" : "jpg";
+      const ext =
+        exportFormat === "image/png" ? "png" : exportFormat === "image/webp" ? "webp" : "jpg";
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
@@ -484,7 +502,9 @@ export function Editor() {
           exportFormat={exportFormat}
           quality={quality}
           exportSize={exportSize}
-          fullLongEdge={image ? Math.max(crop?.width ?? image.width, crop?.height ?? image.height) : null}
+          fullLongEdge={
+            image ? Math.max(crop?.width ?? image.width, crop?.height ?? image.height) : null
+          }
           onOpen={() => fileInputRef.current?.click()}
           onCompareChange={setCompare}
           onReset={resetAll}
@@ -565,15 +585,19 @@ export function Editor() {
             onReset={resetCrop}
             onAspectChange={chooseAspect}
           />
-          <AdjustmentsPanel adjustments={adjustments} onChange={updateAdjustments} disabled={!image} />
+          <AdjustmentsPanel
+            adjustments={adjustments}
+            onChange={updateAdjustments}
+            disabled={!image}
+          />
           <div className="px-4 py-3 text-[11px] leading-relaxed text-zinc-600">
             Double-click any slider to reset it.{" "}
             {/* The compare control differs by layout: a hold button on wide screens,
                 a menu entry behind the hamburger on phones. */}
             <span className="hidden md:inline">
               Hold the Before button or press{" "}
-              <kbd className="rounded border border-zinc-700 px-1">\</kbd> to compare with the original.
-              Undo with <kbd className="rounded border border-zinc-700 px-1">⌘Z</kbd> or{" "}
+              <kbd className="rounded border border-zinc-700 px-1">\</kbd> to compare with the
+              original. Undo with <kbd className="rounded border border-zinc-700 px-1">⌘Z</kbd> or{" "}
               <kbd className="rounded border border-zinc-700 px-1">Ctrl+Z</kbd>.
             </span>
             <span className="md:hidden">

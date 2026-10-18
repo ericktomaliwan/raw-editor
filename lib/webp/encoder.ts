@@ -83,7 +83,13 @@ export function encodeWebp(pixels: RawPixels, quality: number): Promise<Blob> {
       );
       const buffer = pixels.data.buffer;
       w.postMessage(
-        { pixels: buffer, width: pixels.width, height: pixels.height, quality, flipY: pixels.flipY },
+        {
+          pixels: buffer,
+          width: pixels.width,
+          height: pixels.height,
+          quality,
+          flipY: pixels.flipY,
+        },
         [buffer as ArrayBuffer],
       );
     } catch (e) {

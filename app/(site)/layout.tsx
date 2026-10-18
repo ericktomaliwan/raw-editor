@@ -7,7 +7,10 @@ import {
   FooterWithLinksAndSocialIcons,
   SocialLink,
 } from "@/components/sections/footer-with-links-and-social-icons";
-import { NavbarLogo, NavbarWithLogoAndActions } from "@/components/sections/navbar-with-logo-and-actions";
+import {
+  NavbarLogo,
+  NavbarWithLogoAndActions,
+} from "@/components/sections/navbar-with-logo-and-actions";
 import { REPO_URL, SITE_NAME } from "@/lib/site";
 
 /**

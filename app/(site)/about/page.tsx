@@ -148,10 +148,13 @@ export default function AboutPage() {
         subheadline={
           <>
             <p>
-              {SITE_NAME} opens DNG and camera RAW files, along with JPEG, PNG, WebP, AVIF and TIFF, and gives
-              you the tone and color controls photographers already know.
+              {SITE_NAME} opens DNG and camera RAW files, along with JPEG, PNG, WebP, AVIF and TIFF,
+              and gives you the tone and color controls photographers already know.
             </p>
-            <p>There is nothing to install and no account to create. Drop in a photo and start editing.</p>
+            <p>
+              There is nothing to install and no account to create. Drop in a photo and start
+              editing.
+            </p>
           </>
         }
         cta={
@@ -174,13 +177,13 @@ export default function AboutPage() {
         description={
           <>
             <p>
-              {SITE_NAME} is for people who have a few RAW files and want to edit them without installing
-              an app.
+              {SITE_NAME} is for people who have a few RAW files and want to edit them without
+              installing an app.
             </p>
             <p>
               Most RAW editors are built for photographers with thousands of photos. They expect an
-              install, an account, and a library to import into before you can move a single slider. That
-              is a lot of ceremony for a handful of files.
+              install, an account, and a library to import into before you can move a single slider.
+              That is a lot of ceremony for a handful of files.
             </p>
             <p>
               So this one skips all of it. Open the page, drop in a photo, make it look the way you
@@ -210,8 +213,8 @@ export default function AboutPage() {
         headline="Everything you need for a single photo, from first look to export."
         subheadline={
           <p>
-            The editor covers the core of a RAW workflow: decode the file, shape tone and color, apply a look,
-            and save the result.
+            The editor covers the core of a RAW workflow: decode the file, shape tone and color,
+            apply a look, and save the result.
           </p>
         }
         features={
@@ -221,8 +224,9 @@ export default function AboutPage() {
               headline="Real RAW decoding"
               subheadline={
                 <p>
-                  Sensor data is demosaiced on your device, using the white balance your camera recorded. If a
-                  file can&apos;t be decoded, its embedded preview is opened and clearly labeled.
+                  Sensor data is demosaiced on your device, using the white balance your camera
+                  recorded. If a file can&apos;t be decoded, its embedded preview is opened and
+                  clearly labeled.
                 </p>
               }
             />
@@ -231,9 +235,9 @@ export default function AboutPage() {
               headline="Tone and color tools"
               subheadline={
                 <p>
-                  White balance, exposure, highlights and shadows, texture, clarity and dehaze, a tone curve, an
-                  eight-band color mixer, color grading, calibration, sharpening, vignette, fade and grain, plus a
-                  crop tool with the common aspect ratios.
+                  White balance, exposure, highlights and shadows, texture, clarity and dehaze, a
+                  tone curve, an eight-band color mixer, color grading, calibration, sharpening,
+                  vignette, fade and grain, plus a crop tool with the common aspect ratios.
                 </p>
               }
             />
@@ -242,8 +246,8 @@ export default function AboutPage() {
               headline="Edits at the speed of the slider"
               subheadline={
                 <p>
-                  Every adjustment runs on your graphics card, so the preview keeps up as you drag. The export
-                  is rendered with the same pipeline, so what you see is what you save.
+                  Every adjustment runs on your graphics card, so the preview keeps up as you drag.
+                  The export is rendered with the same pipeline, so what you see is what you save.
                 </p>
               }
             />
@@ -253,8 +257,9 @@ export default function AboutPage() {
               subheadline={
                 <p>
                   Start from the built-in High Detail look, or import{" "}
-                  <span className="whitespace-nowrap">.xmp</span> presets one at a time or as a whole folder.
-                  Imported presets stay in your browser, grouped the way the pack organized them.
+                  <span className="whitespace-nowrap">.xmp</span> presets one at a time or as a
+                  whole folder. Imported presets stay in your browser, grouped the way the pack
+                  organized them.
                 </p>
               }
             />
@@ -263,8 +268,9 @@ export default function AboutPage() {
               headline="Full-resolution export"
               subheadline={
                 <p>
-                  Save as JPEG, PNG or WebP at the photo&apos;s full size, or scaled down to a long edge you pick.
-                  JPEG and WebP take a quality setting you choose, for smaller files at lower settings.
+                  Save as JPEG, PNG or WebP at the photo&apos;s full size, or scaled down to a long
+                  edge you pick. JPEG and WebP take a quality setting you choose, for smaller files
+                  at lower settings.
                 </p>
               }
             />
@@ -273,8 +279,8 @@ export default function AboutPage() {
               headline="Private by design"
               subheadline={
                 <p>
-                  Your photo is opened, edited and exported on your own device. It is never sent to a server,
-                  because there is no server-side processing to send it to.
+                  Your photo is opened, edited and exported on your own device. It is never sent to
+                  a server, because there is no server-side processing to send it to.
                 </p>
               }
             />
@@ -289,13 +295,13 @@ export default function AboutPage() {
         description={
           <>
             <p>
-              Most online editors upload your file and process it somewhere else. This one downloads the editor
-              to you instead: RAW decoding runs in WebAssembly, and image processing runs in WebGL on your own
-              hardware.
+              Most online editors upload your file and process it somewhere else. This one downloads
+              the editor to you instead: RAW decoding runs in WebAssembly, and image processing runs
+              in WebGL on your own hardware.
             </p>
             <p>
-              The site counts page views with cookie-free analytics, so we know whether anyone is using it. Your
-              photos, edits and presets are never part of that.
+              The site counts page views with cookie-free analytics, so we know whether anyone is
+              using it. Your photos, edits and presets are never part of that.
             </p>
           </>
         }
@@ -313,15 +319,21 @@ export default function AboutPage() {
         id="expectations"
         eyebrow="Good to know"
         headline="What to expect, honestly."
-        subheadline={<p>A browser-based editor makes a few trade-offs. These are the ones worth knowing up front.</p>}
+        subheadline={
+          <p>
+            A browser-based editor makes a few trade-offs. These are the ones worth knowing up
+            front.
+          </p>
+        }
         features={
           <>
             <Feature
               headline="A neutral starting point"
               subheadline={
                 <p>
-                  RAW files open without the tone mapping and sharpening your camera or phone applies in its own
-                  viewer. Expect a flatter, softer image to begin with, ready for you to shape.
+                  RAW files open without the tone mapping and sharpening your camera or phone
+                  applies in its own viewer. Expect a flatter, softer image to begin with, ready for
+                  you to shape.
                 </p>
               }
             />
@@ -329,9 +341,9 @@ export default function AboutPage() {
               headline="Presets are interpreted"
               subheadline={
                 <p>
-                  Tone, color, curve and grading settings in a preset are applied through this editor&apos;s own
-                  pipeline, so results are close rather than identical. Lens corrections and local adjustments
-                  are skipped.
+                  Tone, color, curve and grading settings in a preset are applied through this
+                  editor&apos;s own pipeline, so results are close rather than identical. Lens
+                  corrections and local adjustments are skipped.
                 </p>
               }
             />
@@ -339,8 +351,9 @@ export default function AboutPage() {
               headline="One photo at a time"
               subheadline={
                 <p>
-                  There is no library and no batch processing. Open a photo, edit it, export it. Your edits are
-                  kept when you swap in another photo, which makes it easy to reuse a look.
+                  There is no library and no batch processing. Open a photo, edit it, export it.
+                  Your edits are kept when you swap in another photo, which makes it easy to reuse a
+                  look.
                 </p>
               }
             />
@@ -352,7 +365,12 @@ export default function AboutPage() {
       <CallToActionSimple
         id="call-to-action"
         headline="Ready to edit a photo?"
-        subheadline={<p>Open the editor and drop a file anywhere on the page. It works with what you already shoot.</p>}
+        subheadline={
+          <p>
+            Open the editor and drop a file anywhere on the page. It works with what you already
+            shoot.
+          </p>
+        }
         cta={
           <div className="flex items-center gap-4">
             <ButtonLink href="/" size="lg">

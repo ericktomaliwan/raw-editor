@@ -91,7 +91,11 @@ function InlineActions({
       >
         Before
       </HeaderButton>
-      <HeaderButton disabled={!edited} onClick={onReset} title="Reset all edits, including the crop">
+      <HeaderButton
+        disabled={!edited}
+        onClick={onReset}
+        title="Reset all edits, including the crop"
+      >
         Reset
       </HeaderButton>
       <div className="flex items-stretch overflow-hidden rounded-md border border-zinc-700">
@@ -249,7 +253,9 @@ function HamburgerMenu({
             trailing={
               <span className="flex items-center gap-2">
                 {compare && <CheckIcon />}
-                <kbd className="rounded border border-zinc-700 px-1 text-[10px] text-zinc-500">\</kbd>
+                <kbd className="rounded border border-zinc-700 px-1 text-[10px] text-zinc-500">
+                  \
+                </kbd>
               </span>
             }
           >
@@ -395,7 +401,10 @@ function SizeSelect({
   );
   if (variant === "inline") return select;
   return (
-    <label className="flex items-center justify-between gap-3 px-2.5 py-1.5 text-xs text-zinc-300" title={hint}>
+    <label
+      className="flex items-center justify-between gap-3 px-2.5 py-1.5 text-xs text-zinc-300"
+      title={hint}
+    >
       Size
       {select}
     </label>

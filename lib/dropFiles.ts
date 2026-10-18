@@ -36,9 +36,7 @@ export function collectDroppedFiles(dt: DataTransfer): Promise<DroppedFile[]> {
 
   if (!entriesSupported || entries.length === 0) {
     // Fallback: plain files only (no folder support in this browser).
-    return Promise.resolve(
-      Array.from(dt.files).map((file) => ({ file, path: file.name })),
-    );
+    return Promise.resolve(Array.from(dt.files).map((file) => ({ file, path: file.name })));
   }
 
   return (async () => {
@@ -56,12 +54,7 @@ export function collectDroppedFiles(dt: DataTransfer): Promise<DroppedFile[]> {
 const MAX_DEPTH = 8;
 const MAX_FILES = 5000;
 
-async function walk(
-  entry: FileSystemEntry,
-  parentPath: string,
-  out: DroppedFile[],
-  depth: number,
-) {
+async function walk(entry: FileSystemEntry, parentPath: string, out: DroppedFile[], depth: number) {
   if (out.length >= MAX_FILES) return;
   const name = entry.name;
   // Skip macOS resource forks / hidden files inside dropped folders.

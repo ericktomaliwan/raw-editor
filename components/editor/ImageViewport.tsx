@@ -1,13 +1,6 @@
 "use client";
 
-import {
-  type Ref,
-  useEffect,
-  useImperativeHandle,
-  useLayoutEffect,
-  useRef,
-  useState,
-} from "react";
+import { type Ref, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState } from "react";
 import type { Adjustments } from "@/lib/adjustments";
 import { type CropRect, fullRect } from "@/lib/crop";
 import { exportDimensions, type ExportSize } from "@/lib/exportSize";
@@ -20,7 +13,10 @@ import { Renderer } from "@/lib/webgl/renderer";
 import { CropOverlay } from "./CropOverlay";
 
 /** Our own encoders by MIME type, each in its own worker. `quality` is 1–100. */
-const ENCODERS: Record<string, { name: string; encode: (pixels: RawPixels, quality: number) => Promise<Blob> }> = {
+const ENCODERS: Record<
+  string,
+  { name: string; encode: (pixels: RawPixels, quality: number) => Promise<Blob> }
+> = {
   "image/jpeg": { name: "MozJPEG", encode: encodeJpeg },
   "image/png": { name: "OxiPNG", encode: (pixels) => encodePng(pixels) },
   "image/webp": { name: "libwebp", encode: encodeWebp },
@@ -154,7 +150,21 @@ export function ImageViewport({
       });
     });
     return () => cancelAnimationFrame(id);
-  }, [adjustments, compare, image, pixelW, pixelH, viewX, viewY, viewW, viewH, cropX, cropY, cropW, cropH]);
+  }, [
+    adjustments,
+    compare,
+    image,
+    pixelW,
+    pixelH,
+    viewX,
+    viewY,
+    viewW,
+    viewH,
+    cropX,
+    cropY,
+    cropW,
+    cropH,
+  ]);
 
   useImperativeHandle(
     ref,
@@ -171,7 +181,10 @@ export function ImageViewport({
         const output: CropRect = { x: cropX, y: cropY, width: cropW, height: cropH };
         const size = exportDimensions(cropW, cropH, longEdge);
         const resizing = size.width !== cropW || size.height !== cropH;
-        if (type === "image/webp" && (size.width > WEBP_MAX_DIMENSION || size.height > WEBP_MAX_DIMENSION)) {
+        if (
+          type === "image/webp" &&
+          (size.width > WEBP_MAX_DIMENSION || size.height > WEBP_MAX_DIMENSION)
+        ) {
           throw new Error(
             `WebP images can be at most ${WEBP_MAX_DIMENSION} pixels on a side. Choose a smaller export size or export as JPEG or PNG.`,
           );
@@ -202,7 +215,13 @@ export function ImageViewport({
         let resizeMs = 0;
         if (resizing) {
           const started = performance.now();
-          r.render(adjustments, { width: cropW, height: cropH, view: output, crop: output, bypass: true });
+          r.render(adjustments, {
+            width: cropW,
+            height: cropH,
+            view: output,
+            crop: output,
+            bypass: true,
+          });
           const original = readPixels();
           restore();
           if (original) {
@@ -268,7 +287,21 @@ export function ImageViewport({
         return { blob, usedBuiltInEncoder, usedBuiltInResize, resizeMs };
       },
     }),
-    [image, adjustments, pixelW, pixelH, compare, viewX, viewY, viewW, viewH, cropX, cropY, cropW, cropH],
+    [
+      image,
+      adjustments,
+      pixelW,
+      pixelH,
+      compare,
+      viewX,
+      viewY,
+      viewW,
+      viewH,
+      cropX,
+      cropY,
+      cropW,
+      cropH,
+    ],
   );
 
   return (

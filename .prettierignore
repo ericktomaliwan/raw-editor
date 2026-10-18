@@ -1,0 +1,13 @@
+# Also skipped: everything in .gitignore (Prettier reads it), which covers
+# .next/ and the WASM runtimes copied into public/.
+
+# Tailwind Plus kit files, kept verbatim in the kit's own style (single quotes,
+# no semicolons). See "Marketing pages" in CLAUDE.md.
+components/elements/
+components/sections/
+components/icons/
+
+# Hand-wrapped prose.
+*.md
+
+pnpm-lock.yaml

@@ -36,7 +36,10 @@ const files = [
 
   ["lib/png/oxipng.worker.js", "oxipng/worker.js"],
   ["node_modules/@jsquash/oxipng/codec/pkg/squoosh_oxipng.js", "oxipng/squoosh_oxipng.js"],
-  ["node_modules/@jsquash/oxipng/codec/pkg/squoosh_oxipng_bg.wasm", "oxipng/squoosh_oxipng_bg.wasm"],
+  [
+    "node_modules/@jsquash/oxipng/codec/pkg/squoosh_oxipng_bg.wasm",
+    "oxipng/squoosh_oxipng_bg.wasm",
+  ],
   ["node_modules/@jsquash/oxipng/LICENSE", "oxipng/LICENSE.txt"],
   ["node_modules/@jsquash/oxipng/codec/LICENSE.codec.md", "oxipng/LICENSE.codec.md"],
 
@@ -50,7 +53,10 @@ const files = [
 
   ["lib/resize/resize.worker.js", "resize/worker.js"],
   ["node_modules/@jsquash/resize/lib/resize/pkg/squoosh_resize.js", "resize/squoosh_resize.js"],
-  ["node_modules/@jsquash/resize/lib/resize/pkg/squoosh_resize_bg.wasm", "resize/squoosh_resize_bg.wasm"],
+  [
+    "node_modules/@jsquash/resize/lib/resize/pkg/squoosh_resize_bg.wasm",
+    "resize/squoosh_resize_bg.wasm",
+  ],
   ["node_modules/@jsquash/resize/LICENSE", "resize/LICENSE.txt"],
   ["node_modules/@jsquash/resize/lib/resize/LICENSE.codec.md", "resize/LICENSE.codec.md"],
 ];

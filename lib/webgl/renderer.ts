@@ -170,7 +170,11 @@ export class Renderer {
   // ----- internals -----
 
   private uploadImage(
-    source: ImageBitmap | HTMLImageElement | HTMLCanvasElement | { data: Uint8Array; width: number; height: number },
+    source:
+      | ImageBitmap
+      | HTMLImageElement
+      | HTMLCanvasElement
+      | { data: Uint8Array; width: number; height: number },
   ): WebGLTexture {
     const gl = this.gl;
     const tex = gl.createTexture();
@@ -199,11 +203,7 @@ export class Renderer {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-    gl.texParameteri(
-      gl.TEXTURE_2D,
-      gl.TEXTURE_MIN_FILTER,
-      gl.LINEAR_MIPMAP_LINEAR,
-    );
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
     // Mip chain doubles as the blur pyramid for clarity/texture/dehaze.
     gl.generateMipmap(gl.TEXTURE_2D);
     return tex;
@@ -220,17 +220,7 @@ export class Renderer {
     this.curveKey = key;
     const gl = this.gl;
     const data = buildCurveTexture(adj);
-    gl.texImage2D(
-      gl.TEXTURE_2D,
-      0,
-      gl.RGBA8,
-      LUT_SIZE,
-      1,
-      0,
-      gl.RGBA,
-      gl.UNSIGNED_BYTE,
-      data,
-    );
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, LUT_SIZE, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, data);
   }
 
   private setUniforms(
@@ -249,7 +239,13 @@ export class Renderer {
     const ih = this.imageHeight;
     gl.uniform2f(this.loc("u_texel"), 1 / iw, 1 / ih);
     gl.uniform4f(this.loc("u_view"), view.x / iw, view.y / ih, view.width / iw, view.height / ih);
-    gl.uniform4f(this.loc("u_cropRect"), crop.x / iw, crop.y / ih, crop.width / iw, crop.height / ih);
+    gl.uniform4f(
+      this.loc("u_cropRect"),
+      crop.x / iw,
+      crop.y / ih,
+      crop.width / iw,
+      crop.height / ih,
+    );
     // One output pixel expressed in image uv: the view is what gets stretched over the output.
     gl.uniform2f(this.loc("u_outTexel"), view.width / iw / outW, view.height / ih / outH);
     // Mip level the GPU is already sampling the source at for this output size.
@@ -297,11 +293,7 @@ export class Renderer {
     const hue = (deg: number) => (((deg % 360) + 360) % 360) / 360;
     gl.uniform2f(this.loc("u_gradeShadow"), hue(a.shadowHue), n(a.shadowSaturation));
     gl.uniform2f(this.loc("u_gradeMidtone"), hue(a.midtoneHue), n(a.midtoneSaturation));
-    gl.uniform2f(
-      this.loc("u_gradeHighlight"),
-      hue(a.highlightHue),
-      n(a.highlightSaturation),
-    );
+    gl.uniform2f(this.loc("u_gradeHighlight"), hue(a.highlightHue), n(a.highlightSaturation));
     gl.uniform2f(this.loc("u_gradeGlobal"), hue(a.globalHue), n(a.globalSaturation));
     f("u_gradeBalance", n(a.gradingBalance));
 

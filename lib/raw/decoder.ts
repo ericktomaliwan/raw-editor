@@ -40,12 +40,17 @@ export class RawDecodeError extends Error {
 
 class LibRawWorker {
   private worker: Worker;
-  private pending = new Map<number, { resolve: (v: unknown) => void; reject: (e: Error) => void }>();
+  private pending = new Map<
+    number,
+    { resolve: (v: unknown) => void; reject: (e: Error) => void }
+  >();
   private nextId = 0;
 
   constructor() {
     this.worker = new Worker(/* turbopackIgnore: true */ WORKER_URL, { type: "module" });
-    this.worker.onmessage = ({ data }: MessageEvent<{ id: number; out?: unknown; error?: string }>) => {
+    this.worker.onmessage = ({
+      data,
+    }: MessageEvent<{ id: number; out?: unknown; error?: string }>) => {
       const p = this.pending.get(data?.id);
       if (!p) return;
       this.pending.delete(data.id);
@@ -63,7 +68,9 @@ class LibRawWorker {
     return new Promise<T>((resolve, reject) => {
       const id = this.nextId++;
       this.pending.set(id, { resolve: resolve as (v: unknown) => void, reject });
-      const transfer = args.filter((a): a is ArrayBufferView => ArrayBuffer.isView(a)).map((a) => a.buffer);
+      const transfer = args
+        .filter((a): a is ArrayBufferView => ArrayBuffer.isView(a))
+        .map((a) => a.buffer);
       this.worker.postMessage({ id, fn, args }, transfer as Transferable[]);
     });
   }
@@ -78,7 +85,8 @@ class LibRawWorker {
 
 export function rawDecodingAvailable(): { ok: boolean; reason?: string } {
   if (typeof window === "undefined") return { ok: false, reason: "no window" };
-  if (typeof WebAssembly === "undefined") return { ok: false, reason: "WebAssembly isn't supported here." };
+  if (typeof WebAssembly === "undefined")
+    return { ok: false, reason: "WebAssembly isn't supported here." };
   if (!window.crossOriginIsolated) {
     return {
       ok: false,
@@ -144,7 +152,9 @@ export async function decodeRawFile(file: File, opts: DecodeOptions): Promise<De
     }
 
     // Fallback: embedded preview.
-    const thumb = await worker.call<LibRawThumbnailData | undefined>("thumbnailData").catch(() => undefined);
+    const thumb = await worker
+      .call<LibRawThumbnailData | undefined>("thumbnailData")
+      .catch(() => undefined);
     if (thumb && thumb.format === "jpeg" && thumb.data.length) {
       const blob = new Blob([thumb.data as BlobPart], { type: "image/jpeg" });
       const bitmap = await createImageBitmap(blob, { imageOrientation: "from-image" });
@@ -172,7 +182,13 @@ export async function decodeRawFile(file: File, opts: DecodeOptions): Promise<De
  */
 const SRGB_GAMMA = [1 / 2.4, 12.92, 0, 0, 0, 0] as unknown as LibRawSettings["gamm"];
 
-function buildSettings({ halfSize, bright }: { halfSize: boolean; bright: number }): LibRawSettings {
+function buildSettings({
+  halfSize,
+  bright,
+}: {
+  halfSize: boolean;
+  bright: number;
+}): LibRawSettings {
   return {
     useCameraWb: true, // start from the as-shot white balance
     outputColor: 1, // sRGB
@@ -231,7 +247,8 @@ function normaliseMetadata(m: LibRawMetadata): RawMetadata {
     shutter: m.shutter ?? 0,
     aperture: m.aperture ?? 0,
     focalLength: m.focal_len ?? 0,
-    timestamp: m.timestamp instanceof Date && !isNaN(m.timestamp.getTime()) ? m.timestamp : undefined,
+    timestamp:
+      m.timestamp instanceof Date && !isNaN(m.timestamp.getTime()) ? m.timestamp : undefined,
   };
 }
 
@@ -240,7 +257,8 @@ export function formatRawMetadata(m: RawMetadata): string {
   const camera = [m.make, m.model].filter(Boolean).join(" ");
   if (camera) parts.push(camera);
   if (m.iso) parts.push(`ISO ${Math.round(m.iso)}`);
-  if (m.shutter) parts.push(m.shutter >= 1 ? `${m.shutter.toFixed(1)}s` : `1/${Math.round(1 / m.shutter)}`);
+  if (m.shutter)
+    parts.push(m.shutter >= 1 ? `${m.shutter.toFixed(1)}s` : `1/${Math.round(1 / m.shutter)}`);
   if (m.aperture) parts.push(`f/${m.aperture.toFixed(1).replace(/\.0$/, "")}`);
   if (m.focalLength) parts.push(`${Math.round(m.focalLength)}mm`);
   return parts.join(" · ");

@@ -1,11 +1,6 @@
 "use client";
 
-import {
-  ASPECT_PRESETS,
-  type AspectChoice,
-  aspectLabel,
-  canRotateAspect,
-} from "@/lib/crop";
+import { ASPECT_PRESETS, type AspectChoice, aspectLabel, canRotateAspect } from "@/lib/crop";
 import { Section } from "./Section";
 
 interface Props {

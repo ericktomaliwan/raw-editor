@@ -191,7 +191,10 @@ export function parseXmpPreset(
 
   // --- Color grading / split toning ---
   set("shadowHue", first("SplitToningShadowHue", "ColorGradeShadowHue"));
-  set("shadowSaturation", clampN(first("SplitToningShadowSaturation", "ColorGradeShadowSat"), 0, 100));
+  set(
+    "shadowSaturation",
+    clampN(first("SplitToningShadowSaturation", "ColorGradeShadowSat"), 0, 100),
+  );
   set("highlightHue", first("SplitToningHighlightHue", "ColorGradeHighlightHue"));
   set(
     "highlightSaturation",

@@ -103,11 +103,22 @@ export function encodeJpeg(pixels: RawPixels, quality: number): Promise<Blob> {
       });
       const buffer = pixels.data.buffer;
       w.postMessage(
-        { id, pixels: buffer, width: pixels.width, height: pixels.height, quality, flipY: pixels.flipY },
+        {
+          id,
+          pixels: buffer,
+          width: pixels.width,
+          height: pixels.height,
+          quality,
+          flipY: pixels.flipY,
+        },
         [buffer as ArrayBuffer],
       );
     } catch (e) {
-      reject(new JpegEncodeError(e instanceof Error ? e.message : "The JPEG encoder couldn't be started."));
+      reject(
+        new JpegEncodeError(
+          e instanceof Error ? e.message : "The JPEG encoder couldn't be started.",
+        ),
+      );
     }
   });
 }

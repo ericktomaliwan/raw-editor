@@ -38,8 +38,8 @@ export function DropZone({ active, onBrowse }: Props) {
             {active ? "Release to open" : "Drop a photo to start editing"}
           </div>
           <div className="mt-1 text-sm text-zinc-500">
-            or <span className="text-zinc-300 underline underline-offset-2">browse</span> for a
-            DNG, camera RAW, JPEG, PNG, WebP, AVIF or TIFF
+            or <span className="text-zinc-300 underline underline-offset-2">browse</span> for a DNG,
+            camera RAW, JPEG, PNG, WebP, AVIF or TIFF
           </div>
         </div>
         <div className="text-[11px] text-zinc-600">

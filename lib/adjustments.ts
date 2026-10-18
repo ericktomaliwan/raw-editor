@@ -211,9 +211,7 @@ export const CALIBRATION_BLUE: SliderSpec[] = [
   { key: "calBlueSaturation", label: "Saturation", min: -100, max: 100 },
 ];
 
-export const DETAIL: SliderSpec[] = [
-  { key: "sharpness", label: "Sharpening", min: 0, max: 150 },
-];
+export const DETAIL: SliderSpec[] = [{ key: "sharpness", label: "Sharpening", min: 0, max: 150 }];
 
 export const EFFECTS: SliderSpec[] = [
   { key: "vignette", label: "Vignette", min: -100, max: 100 },
@@ -222,16 +220,11 @@ export const EFFECTS: SliderSpec[] = [
 ];
 
 /** Merge a partial preset over a base, deep-merging the HSL triples. */
-export function applyPreset(
-  base: Adjustments,
-  preset: Partial<Adjustments>,
-): Adjustments {
+export function applyPreset(base: Adjustments, preset: Partial<Adjustments>): Adjustments {
   const next: Adjustments = { ...base, ...preset };
   if (preset.hslHue) next.hslHue = { ...base.hslHue, ...preset.hslHue };
-  if (preset.hslSaturation)
-    next.hslSaturation = { ...base.hslSaturation, ...preset.hslSaturation };
-  if (preset.hslLuminance)
-    next.hslLuminance = { ...base.hslLuminance, ...preset.hslLuminance };
+  if (preset.hslSaturation) next.hslSaturation = { ...base.hslSaturation, ...preset.hslSaturation };
+  if (preset.hslLuminance) next.hslLuminance = { ...base.hslLuminance, ...preset.hslLuminance };
   return next;
 }
 
@@ -311,7 +304,8 @@ export function sanitizeAdjustments(input: unknown): Partial<Adjustments> {
     const v = input[key];
     if (!isFiniteNumber(v)) continue;
     const [lo, hi] = NUMERIC_RANGES[key];
-    out[key] = HUE_KEYS.has(key) && (v < lo || v > hi) ? ((v % 360) + 360) % 360 : clampTo(v, lo, hi);
+    out[key] =
+      HUE_KEYS.has(key) && (v < lo || v > hi) ? ((v % 360) + 360) % 360 : clampTo(v, lo, hi);
   }
 
   for (const key of CURVE_KEYS) {

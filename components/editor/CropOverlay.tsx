@@ -167,7 +167,10 @@ export function CropOverlay({ imageWidth, imageHeight, rect, ratio, onChange }: 
         <div className="pointer-events-none absolute inset-x-0 top-1/3 h-1/3 border-y border-white/25" />
 
         {MARKS.map((className) => (
-          <div key={className} className={`pointer-events-none absolute border-white ${className}`} />
+          <div
+            key={className}
+            className={`pointer-events-none absolute border-white ${className}`}
+          />
         ))}
 
         {/* Live size of the crop, in pixels of the exported image. */}

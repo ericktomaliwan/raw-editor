@@ -84,11 +84,7 @@ export function buildCurveLut(points: CurvePoint[]): Uint8Array {
       const h10 = t3 - 2 * t2 + t;
       const h01 = -2 * t3 + 3 * t2;
       const h11 = t3 - t2;
-      y =
-        h00 * ys[seg] +
-        h10 * h[seg] * m[seg] +
-        h01 * ys[seg + 1] +
-        h11 * h[seg] * m[seg + 1];
+      y = h00 * ys[seg] + h10 * h[seg] * m[seg] + h01 * ys[seg + 1] + h11 * h[seg] * m[seg + 1];
     }
     lut[i] = Math.round(clamp255(y));
   }

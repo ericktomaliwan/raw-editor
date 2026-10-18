@@ -18,7 +18,7 @@ export interface EditState {
 }
 
 /** How many steps back you can go. Snapshots are small (about 1 KB each). */
-const LIMIT = 100;
+export const LIMIT = 100;
 
 /**
  * Changes tagged with the same key that arrive within this window of each
@@ -26,9 +26,9 @@ const LIMIT = 100;
  * between its events is far below this and the whole drag undoes at once;
  * pausing longer than this on the same slider starts a new step.
  */
-const COALESCE_MS = 800;
+export const COALESCE_MS = 800;
 
-interface History {
+export interface History {
   past: EditState[];
   present: EditState;
   future: EditState[];
@@ -37,7 +37,7 @@ interface History {
   lastAt: number;
 }
 
-type Action =
+export type HistoryAction =
   | { type: "apply"; update: (prev: EditState) => EditState; key: string | undefined; at: number }
   | { type: "restart"; update: (prev: EditState) => EditState }
   | { type: "undo" }
@@ -45,7 +45,8 @@ type Action =
 
 const same = (a: EditState, b: EditState) => a === b || JSON.stringify(a) === JSON.stringify(b);
 
-function reducer(h: History, action: Action): History {
+/** Exported for tests; components use the hook below. */
+export function historyReducer(h: History, action: HistoryAction): History {
   switch (action.type) {
     case "apply": {
       const next = action.update(h.present);
@@ -83,7 +84,13 @@ function reducer(h: History, action: Action): History {
       };
     }
     case "restart":
-      return { past: [], present: action.update(h.present), future: [], lastKey: undefined, lastAt: 0 };
+      return {
+        past: [],
+        present: action.update(h.present),
+        future: [],
+        lastKey: undefined,
+        lastAt: 0,
+      };
   }
 }
 
@@ -102,11 +109,13 @@ function reducer(h: History, action: Action): History {
  * pure, and read any refs before calling `apply`, not inside the function.
  */
 export function useEditHistory(initial: () => EditState) {
-  const [history, dispatch] = useReducer(
-    reducer,
-    undefined,
-    (): History => ({ past: [], present: initial(), future: [], lastKey: undefined, lastAt: 0 }),
-  );
+  const [history, dispatch] = useReducer(historyReducer, undefined, (): History => ({
+    past: [],
+    present: initial(),
+    future: [],
+    lastKey: undefined,
+    lastAt: 0,
+  }));
 
   const apply = useCallback((update: (prev: EditState) => EditState, key?: string) => {
     // The timestamp is taken here, in the event handler, so the reducer stays pure.

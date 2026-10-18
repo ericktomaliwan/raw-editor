@@ -28,10 +28,7 @@ export function Slider({
 }: SliderProps) {
   const id = useId();
   const decimals = step < 1 ? Math.max(0, -Math.floor(Math.log10(step))) : 0;
-  const display =
-    value > 0 && min < 0
-      ? `+${value.toFixed(decimals)}`
-      : value.toFixed(decimals);
+  const display = value > 0 && min < 0 ? `+${value.toFixed(decimals)}` : value.toFixed(decimals);
   const isDefault = Math.abs(value - defaultValue) < step / 2;
   const pct = ((value - min) / (max - min)) * 100;
   const zeroPct = ((defaultValue - min) / (max - min)) * 100;
@@ -71,10 +68,7 @@ export function Slider({
           />
         )}
         {min < 0 && !track && (
-          <div
-            className="absolute h-2 w-px bg-zinc-600"
-            style={{ left: `${zeroPct}%` }}
-          />
+          <div className="absolute h-2 w-px bg-zinc-600" style={{ left: `${zeroPct}%` }} />
         )}
         <input
           id={id}

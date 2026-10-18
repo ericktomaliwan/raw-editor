@@ -128,8 +128,8 @@ export function PresetsPanel({
             onClick={() => inputRef.current?.click()}
             className="rounded-md border border-dashed border-zinc-800 px-3 py-4 text-center text-[11px] leading-relaxed text-zinc-500 hover:border-zinc-600 hover:text-zinc-300"
           >
-            Add your own. Drop <span className="text-zinc-400">.xmp</span> files or a folder
-            here, or click to import.
+            Add your own. Drop <span className="text-zinc-400">.xmp</span> files or a folder here,
+            or click to import.
           </button>
         ) : (
           <p className="text-[11px] leading-relaxed text-zinc-600">

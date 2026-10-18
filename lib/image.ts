@@ -93,10 +93,7 @@ export async function loadImageFile(
     }
   }
   if (!file.type.startsWith("image/") && !looksLikeImage(file.name)) {
-    throw new UnsupportedImageError(
-      `"${file.name}" doesn't look like an image file.`,
-      "unknown",
-    );
+    throw new UnsupportedImageError(`"${file.name}" doesn't look like an image file.`, "unknown");
   }
 
   // Keep colours unpremultiplied: the GPU upload, the shader and every encoder
@@ -145,9 +142,19 @@ export async function loadImageFile(
 }
 
 function looksLikeImage(name: string) {
-  return ["jpg", "jpeg", "png", "webp", "avif", "gif", "bmp", "tif", "tiff", "heic", "heif"].includes(
-    extensionOf(name),
-  );
+  return [
+    "jpg",
+    "jpeg",
+    "png",
+    "webp",
+    "avif",
+    "gif",
+    "bmp",
+    "tif",
+    "tiff",
+    "heic",
+    "heif",
+  ].includes(extensionOf(name));
 }
 
 export function stripExtension(name: string) {

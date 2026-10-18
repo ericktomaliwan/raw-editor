@@ -114,7 +114,10 @@ export function applyAspect(
   imageWidth: number,
   imageHeight: number,
 ): CropRect {
-  const minWidth = Math.max(Math.min(MIN_SIZE, imageWidth), Math.min(MIN_SIZE, imageHeight) * ratio);
+  const minWidth = Math.max(
+    Math.min(MIN_SIZE, imageWidth),
+    Math.min(MIN_SIZE, imageHeight) * ratio,
+  );
   const { w, h } = sizeForRatio(Math.max(rect.width, minWidth), ratio, imageWidth, imageHeight);
   const cx = rect.x + rect.width / 2;
   const cy = rect.y + rect.height / 2;
