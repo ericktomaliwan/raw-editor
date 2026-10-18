@@ -11,16 +11,24 @@ import {
 import type { Adjustments } from "@/lib/adjustments";
 import { type CropRect, fullRect } from "@/lib/crop";
 import type { LoadedImage } from "@/lib/image";
-import { encodeJpeg } from "@/lib/jpeg/encoder";
+import { encodeJpeg, type RawPixels } from "@/lib/jpeg/encoder";
 import { encodePng } from "@/lib/png/encoder";
+import { encodeWebp, WEBP_MAX_DIMENSION } from "@/lib/webp/encoder";
 import { Renderer } from "@/lib/webgl/renderer";
 import { CropOverlay } from "./CropOverlay";
+
+/** Our own encoders by MIME type, each in its own worker. `quality` is 1–100. */
+const ENCODERS: Record<string, { name: string; encode: (pixels: RawPixels, quality: number) => Promise<Blob> }> = {
+  "image/jpeg": { name: "MozJPEG", encode: encodeJpeg },
+  "image/png": { name: "OxiPNG", encode: (pixels) => encodePng(pixels) },
+  "image/webp": { name: "libwebp", encode: encodeWebp },
+};
 
 export interface ExportResult {
   blob: Blob;
   /**
-   * True when a JPEG or PNG had to be written by the browser's built-in
-   * encoder because ours (MozJPEG, OxiPNG) couldn't run. Always false for WebP.
+   * True when the file had to be written by the browser's built-in encoder
+   * because ours (MozJPEG, OxiPNG, libwebp) couldn't run.
    */
   usedBuiltInEncoder: boolean;
 }
@@ -29,8 +37,8 @@ export interface ViewportHandle {
   maxTextureSize: number;
   /**
    * Render at full resolution (of the crop, if there is one) and encode.
-   * `quality` is 0..1. JPEGs go through MozJPEG and PNGs through OxiPNG, with
-   * the browser's encoder as the fallback for both.
+   * `quality` is 0..1. JPEGs go through MozJPEG, PNGs through OxiPNG and WebPs
+   * through libwebp, with the browser's encoder as the fallback for all three.
    */
   exportBlob(type: string, quality?: number): Promise<ExportResult>;
 }
@@ -148,6 +156,11 @@ export function ImageViewport({
         const r = rendererRef.current;
         const canvas = canvasRef.current;
         if (!r || !canvas || !image) throw new Error("No image to export.");
+        if (type === "image/webp" && (cropW > WEBP_MAX_DIMENSION || cropH > WEBP_MAX_DIMENSION)) {
+          throw new Error(
+            `WebP images can be at most ${WEBP_MAX_DIMENSION} pixels on a side. Crop the photo or export as JPEG or PNG.`,
+          );
+        }
         // The exported picture is the crop, at one output pixel per image pixel.
         const output: CropRect = { x: cropX, y: cropY, width: cropW, height: cropH };
         const full = { width: cropW, height: cropH, view: output, crop: output };
@@ -165,9 +178,10 @@ export function ImageViewport({
         let blob: Blob | null = null;
         let usedBuiltInEncoder = false;
 
-        if (type === "image/jpeg" || type === "image/png") {
-          // Read the full-size render back and hand it to MozJPEG or OxiPNG in
-          // its worker. The display render is restored first: the pixels are
+        const encoder = ENCODERS[type];
+        if (encoder) {
+          // Read the full-size render back and hand it to our encoder in its
+          // worker. The display render is restored first: the pixels are
           // already copied.
           r.render(adjustments, full);
           let pixels: ReturnType<Renderer["readPixels"]> = null;
@@ -180,13 +194,9 @@ export function ImageViewport({
           if (pixels) {
             const raw = { ...pixels, flipY: true };
             try {
-              blob =
-                type === "image/png"
-                  ? await encodePng(raw)
-                  : await encodeJpeg(raw, Math.round(quality * 100));
+              blob = await encoder.encode(raw, Math.round(quality * 100));
             } catch (e) {
-              const name = type === "image/png" ? "OxiPNG" : "MozJPEG";
-              console.warn(`[export] ${name} unavailable, using the browser's encoder:`, e);
+              console.warn(`[export] ${encoder.name} unavailable, using the browser's encoder:`, e);
             }
           }
           usedBuiltInEncoder = blob === null;
@@ -200,6 +210,11 @@ export function ImageViewport({
           blob = await result;
         }
         if (!blob) throw new Error("Export failed — the image may be too large for this browser.");
+        // A browser that can't write the format returns a PNG instead (Safari
+        // does this for WebP). Don't save that under the wrong extension.
+        if (blob.type !== type) {
+          throw new Error("This browser can't write that format. Try exporting as JPEG or PNG.");
+        }
         return { blob, usedBuiltInEncoder };
       },
     }),

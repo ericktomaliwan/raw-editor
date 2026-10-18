@@ -22,7 +22,7 @@ People who have a few RAW files and want to edit them without installing an app.
 - **Presets.** One built-in look (High Detail), plus your own: import `.xmp` preset files one at a time or drop a whole folder. Imported presets are stored in your browser.
 - **Undo and redo** for every edit.
 - **Before and after** comparison.
-- **Export** as JPEG, PNG or WebP at full resolution. JPEGs are encoded with MozJPEG at a quality you choose (1 to 100). PNGs are compressed with OxiPNG, which makes the file smaller without changing a pixel.
+- **Export** as JPEG, PNG or WebP at full resolution. JPEGs are encoded with MozJPEG and WebPs with libwebp, both at a quality you choose (1 to 100). PNGs are compressed with OxiPNG, which makes the file smaller without changing a pixel.
 
 ## Keyboard shortcuts
 
@@ -67,7 +67,7 @@ Then open [http://localhost:3000](http://localhost:3000).
 Things worth knowing:
 
 - **Use pnpm.** The lockfile and the install scripts assume it.
-- **The WebAssembly runtimes are copied, not committed.** `pnpm install`, `pnpm dev` and `pnpm build` all run `scripts/copy-wasm.mjs`, which copies the RAW decoder into `public/libraw/`, the JPEG encoder into `public/mozjpeg/` and the PNG encoder into `public/oxipng/`. All three folders are generated and gitignored. If you edit `lib/jpeg/mozjpeg.worker.js` or `lib/png/oxipng.worker.js`, restart `pnpm dev` so the copy is refreshed.
+- **The WebAssembly runtimes are copied, not committed.** `pnpm install`, `pnpm dev` and `pnpm build` all run `scripts/copy-wasm.mjs`, which copies the RAW decoder into `public/libraw/`, the JPEG encoder into `public/mozjpeg/`, the PNG encoder into `public/oxipng/` and the WebP encoder into `public/webp/`. All four folders are generated and gitignored. If you edit `lib/jpeg/mozjpeg.worker.js`, `lib/png/oxipng.worker.js` or `lib/webp/webp.worker.js`, restart `pnpm dev` so the copy is refreshed.
 - **There is no automated test suite yet.** Changes are verified in the browser.
 
 ### Configuration
@@ -82,7 +82,7 @@ There is one optional environment variable, described in `.env.example`:
 
 1. **Decode.** A RAW file is handed to LibRaw running in a Web Worker, which demosaics it using the white balance the camera recorded and returns an sRGB image. If the sensor data can't be decoded, the file's embedded preview is used and the photo is labeled as a preview. Other formats go straight through the browser's own decoder.
 2. **Render.** The image is uploaded once as a WebGL 2 texture. Every adjustment is a uniform on a single fragment shader, so moving a slider is one draw call. White balance, calibration and exposure are applied in linear light; tone, curves, color and effects follow on display-referred values.
-3. **Export.** The same shader renders the photo (or the cropped area) at full resolution. JPEGs and PNGs are read back from the GPU and encoded in a second worker, by MozJPEG and OxiPNG, with the browser's built-in encoder as a fallback. WebP uses the browser's encoder.
+3. **Export.** The same shader renders the photo (or the cropped area) at full resolution. The pixels are read back from the GPU and encoded in a second worker, by MozJPEG, OxiPNG or libwebp, with the browser's built-in encoder as a fallback.
 
 The edit itself (adjustments, active preset and crop) lives in a small undo/redo history, so every change can be stepped back.
 
@@ -104,6 +104,7 @@ lib/
   raw/decoder.ts      RAW decoding (LibRaw worker client)
   jpeg/               MozJPEG encoder worker and its client
   png/                OxiPNG encoder worker and its client
+  webp/               libwebp encoder worker and its client
   crop.ts             crop geometry and ratio presets
   xmp.ts              .xmp preset parser
   presets.ts          built-in presets
@@ -118,7 +119,7 @@ next.config.ts        response headers (see Deploying)
 The app is a static Next.js site and is hosted on Vercel. Two things matter wherever it is hosted:
 
 - **Cross-origin isolation is required.** The RAW decoder uses threads, which need `SharedArrayBuffer`, which browsers only allow on cross-origin-isolated pages. `next.config.ts` sends `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: require-corp` on every route. A host that ignores `next.config.ts` headers must be configured to send them, or RAW files will not decode.
-- **The Content Security Policy is same-origin only.** It is also set in `next.config.ts`. Any third-party script, font, image or API you add will be blocked until its host is added to the matching directive. The three worker folders (`/libraw`, `/mozjpeg` and `/oxipng`) get their own, slightly looser policies so WebAssembly can compile there without loosening the page's.
+- **The Content Security Policy is same-origin only.** It is also set in `next.config.ts`. Any third-party script, font, image or API you add will be blocked until its host is added to the matching directive. The four worker folders (`/libraw`, `/mozjpeg`, `/oxipng` and `/webp`) get their own, slightly looser policies so WebAssembly can compile there without loosening the page's.
 
 Page-view analytics use `@vercel/analytics` and only record anything once Web Analytics is enabled for the Vercel project.
 
@@ -138,6 +139,7 @@ Page-view analytics use `@vercel/analytics` and only record anything once Web An
 - [LibRaw](https://www.libraw.org) through [`libraw-wasm`](https://www.npmjs.com/package/libraw-wasm), for RAW decoding
 - [MozJPEG](https://github.com/mozilla/mozjpeg) through [`@jsquash/jpeg`](https://www.npmjs.com/package/@jsquash/jpeg), for JPEG encoding
 - [OxiPNG](https://github.com/shssoichiro/oxipng) through [`@jsquash/oxipng`](https://www.npmjs.com/package/@jsquash/oxipng), for PNG encoding
+- [libwebp](https://chromium.googlesource.com/webm/libwebp) through [`@jsquash/webp`](https://www.npmjs.com/package/@jsquash/webp), for WebP encoding
 
 ## License and third-party code
 
@@ -148,3 +150,4 @@ Third-party code keeps its own terms:
 - **LibRaw** is dual-licensed under LGPL 2.1 and CDDL 1.0.
 - **MozJPEG** is covered by the IJG, modified BSD and zlib licenses. Its license files are served alongside the encoder at `/mozjpeg/`.
 - **OxiPNG** is MIT-licensed, and its WebAssembly packaging is Apache 2.0. Both license files are served alongside the encoder at `/oxipng/`.
+- **libwebp** is covered by a BSD license, and its WebAssembly packaging is Apache 2.0. Both license files are served alongside the encoder at `/webp/`.

@@ -263,8 +263,8 @@ export default function AboutPage() {
               headline="Full-resolution export"
               subheadline={
                 <p>
-                  Save as JPEG, PNG or WebP at the photo&apos;s full size. JPEGs use the MozJPEG encoder with a
-                  quality setting you choose, for smaller files at lower settings.
+                  Save as JPEG, PNG or WebP at the photo&apos;s full size. JPEG and WebP take a quality setting
+                  you choose, for smaller files at lower settings.
                 </p>
               }
             />
@@ -305,7 +305,7 @@ export default function AboutPage() {
           stat={RAW_EXTENSIONS.length}
           text="Camera RAW file types recognized, including DNG, CR3, NEF, ARW and RAF."
         />
-        <Stat stat="3" text="Export formats: JPEG with adjustable quality, PNG and WebP." />
+        <Stat stat="3" text="Export formats: JPEG and WebP with adjustable quality, and PNG." />
       </StatsThreeColumnWithDescription>
 
       {/* What to expect */}

@@ -9,6 +9,9 @@
 // - public/oxipng/   PNG encoder: our own small worker (lib/png/oxipng.worker.js)
 //                    plus the OxiPNG codec (its single-threaded build; the
 //                    worker explains why) it imports from the same folder.
+// - public/webp/     WebP encoder: our own small worker (lib/webp/webp.worker.js)
+//                    plus both builds of the libwebp codec (SIMD and plain; the
+//                    worker picks one) from the same folder.
 //
 // Each folder is also served with its own Content Security Policy (see
 // next.config.ts), which is the other reason these stay static files.
@@ -34,6 +37,14 @@ const files = [
   ["node_modules/@jsquash/oxipng/codec/pkg/squoosh_oxipng_bg.wasm", "oxipng/squoosh_oxipng_bg.wasm"],
   ["node_modules/@jsquash/oxipng/LICENSE", "oxipng/LICENSE.txt"],
   ["node_modules/@jsquash/oxipng/codec/LICENSE.codec.md", "oxipng/LICENSE.codec.md"],
+
+  ["lib/webp/webp.worker.js", "webp/worker.js"],
+  ["node_modules/@jsquash/webp/codec/enc/webp_enc_simd.js", "webp/webp_enc_simd.js"],
+  ["node_modules/@jsquash/webp/codec/enc/webp_enc_simd.wasm", "webp/webp_enc_simd.wasm"],
+  ["node_modules/@jsquash/webp/codec/enc/webp_enc.js", "webp/webp_enc.js"],
+  ["node_modules/@jsquash/webp/codec/enc/webp_enc.wasm", "webp/webp_enc.wasm"],
+  ["node_modules/@jsquash/webp/LICENSE", "webp/LICENSE.txt"],
+  ["node_modules/@jsquash/webp/codec/LICENSE.codec.md", "webp/LICENSE.codec.md"],
 ];
 
 for (const [source, target] of files) {

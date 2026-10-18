@@ -5,10 +5,15 @@ import { useEffect, useId, useRef, useState } from "react";
 
 export type ExportFormat = "image/jpeg" | "image/png" | "image/webp";
 
-/** JPEG export quality, as the familiar 1–100 scale. Lower = smaller file. */
-export const JPEG_QUALITY_MIN = 1;
-export const JPEG_QUALITY_MAX = 100;
-export const JPEG_QUALITY_DEFAULT = 92;
+/** JPEG and WebP export quality, as the familiar 1–100 scale. Lower = smaller file. */
+export const QUALITY_MIN = 1;
+export const QUALITY_MAX = 100;
+export const QUALITY_DEFAULT = 92;
+
+/** The formats the quality setting applies to (PNG is lossless). */
+export function hasQuality(format: ExportFormat): boolean {
+  return format !== "image/png";
+}
 
 interface Props {
   hasImage: boolean;
@@ -18,7 +23,7 @@ interface Props {
   compare: boolean;
   exporting: boolean;
   exportFormat: ExportFormat;
-  jpegQuality: number;
+  quality: number;
   onOpen: () => void;
   /** Show (true) or hide (false) the original image. */
   onCompareChange: (showOriginal: boolean) => void;
@@ -56,7 +61,7 @@ function InlineActions({
   compare,
   exporting,
   exportFormat,
-  jpegQuality,
+  quality,
   onOpen,
   onCompareChange,
   onReset,
@@ -92,8 +97,8 @@ function InlineActions({
           <option value="image/png">PNG</option>
           <option value="image/webp">WebP</option>
         </select>
-        {exportFormat === "image/jpeg" && (
-          <QualityField variant="inline" value={jpegQuality} onCommit={onQualityChange} />
+        {hasQuality(exportFormat) && (
+          <QualityField variant="inline" value={quality} onCommit={onQualityChange} />
         )}
         <button
           type="button"
@@ -141,7 +146,7 @@ function HamburgerMenu({
   compare,
   exporting,
   exportFormat,
-  jpegQuality,
+  quality,
   onOpen,
   onCompareChange,
   onReset,
@@ -254,8 +259,8 @@ function HamburgerMenu({
               <option value="image/webp">WebP</option>
             </select>
           </label>
-          {exportFormat === "image/jpeg" && (
-            <QualityField variant="row" value={jpegQuality} onCommit={onQualityChange} />
+          {hasQuality(exportFormat) && (
+            <QualityField variant="row" value={quality} onCommit={onQualityChange} />
           )}
           <div className="px-1 pb-1 pt-1.5">
             <button
@@ -329,7 +334,7 @@ function CheckIcon() {
 }
 
 /**
- * JPEG quality entry (1–100). Typing is free-form; the value is committed on
+ * JPEG / WebP quality entry (1–100). Typing is free-form; the value is committed on
  * blur or Enter, rounded and clamped into range. Anything that isn't a number
  * is discarded and the previous value comes back. Escape cancels the edit.
  *
@@ -351,13 +356,13 @@ function QualityField({
     if (draft !== null && !cancelled.current) {
       const v = parseFloat(draft);
       if (Number.isFinite(v)) {
-        onCommit(Math.min(JPEG_QUALITY_MAX, Math.max(JPEG_QUALITY_MIN, Math.round(v))));
+        onCommit(Math.min(QUALITY_MAX, Math.max(QUALITY_MIN, Math.round(v))));
       }
     }
     cancelled.current = false;
     setDraft(null);
   };
-  const hint = `JPEG quality, ${JPEG_QUALITY_MIN}–${JPEG_QUALITY_MAX}. Lower numbers give a smaller file.`;
+  const hint = `Quality, ${QUALITY_MIN}–${QUALITY_MAX}. Lower numbers give a smaller file.`;
   return (
     <label
       className={

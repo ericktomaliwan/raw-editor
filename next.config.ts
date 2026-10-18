@@ -50,7 +50,7 @@ const PAGE_CSP = contentSecurityPolicy(
 const DECODER_CSP = contentSecurityPolicy("'self' 'unsafe-eval'");
 
 /**
- * Same idea for the JPEG and PNG encoder workers under /mozjpeg and /oxipng.
+ * Same idea for the JPEG, PNG and WebP encoder workers under /mozjpeg, /oxipng and /webp.
  * Their glue code needs no eval, so the narrower `'wasm-unsafe-eval'` (compile
  * WebAssembly, nothing else) is enough.
  */
@@ -88,6 +88,10 @@ const nextConfig: NextConfig = {
       },
       {
         source: "/oxipng/:path*",
+        headers: [{ key: "Content-Security-Policy", value: ENCODER_CSP }],
+      },
+      {
+        source: "/webp/:path*",
         headers: [{ key: "Content-Security-Policy", value: ENCODER_CSP }],
       },
       {

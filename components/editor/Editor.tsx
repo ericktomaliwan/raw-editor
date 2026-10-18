@@ -34,7 +34,7 @@ import { AdjustmentsPanel } from "./AdjustmentsPanel";
 import { CropPanel } from "./CropPanel";
 import { DropZone } from "./DropZone";
 import { ExportProgress } from "./ExportProgress";
-import { type ExportFormat, HeaderActions, JPEG_QUALITY_DEFAULT } from "./HeaderActions";
+import { type ExportFormat, HeaderActions, hasQuality, QUALITY_DEFAULT } from "./HeaderActions";
 import { ImageViewport, type ViewportHandle } from "./ImageViewport";
 import { PresetsPanel } from "./PresetsPanel";
 
@@ -45,12 +45,18 @@ const NON_TEXT_INPUTS = new Set(["range", "checkbox", "radio", "button", "submit
  * Rough export time in milliseconds per megapixel on a fast laptop. It only
  * paces the progress bar, and only until this session has timed a real export
  * in that format. PNG is the slow one: its encoder searches for the smallest
- * file. The others mostly cost the full-size render and readback.
+ * file. WebP's encode is about 115 ms per megapixel on its own.
  */
 const EXPORT_MS_PER_MEGAPIXEL: Record<ExportFormat, number> = {
   "image/jpeg": 150,
   "image/png": 800,
-  "image/webp": 100,
+  "image/webp": 200,
+};
+
+const FORMAT_LABELS: Record<ExportFormat, string> = {
+  "image/jpeg": "JPEG",
+  "image/png": "PNG",
+  "image/webp": "WebP",
 };
 /** Floor for the estimate, so the bar is still seen to move on a tiny image. */
 const EXPORT_ESTIMATE_MIN_MS = 400;
@@ -85,7 +91,7 @@ export function Editor() {
   /** Measured ms per megapixel of the last export in each format, for the next estimate. */
   const exportRates = useRef<Partial<Record<ExportFormat, number>>>({});
   const [exportFormat, setExportFormat] = useState<ExportFormat>("image/jpeg");
-  const [jpegQuality, setJpegQuality] = useState(JPEG_QUALITY_DEFAULT);
+  const [quality, setQuality] = useState(QUALITY_DEFAULT);
   const [toast, setToast] = useState<{ message: string; kind: "error" | "info" } | null>(null);
 
   // ----- toast -----
@@ -364,19 +370,18 @@ export function Editor() {
     setExportEstimate(Math.max(EXPORT_ESTIMATE_MIN_MS, megapixels * rate));
     const started = performance.now();
     try {
-      // The quality field only applies to JPEG; WebP keeps its fixed setting and
-      // PNG is lossless (the encoder ignores the value).
-      const quality = exportFormat === "image/jpeg" ? jpegQuality / 100 : 0.92;
+      // The quality field applies to JPEG and WebP; PNG is lossless (the
+      // encoder ignores the value).
       const { blob, usedBuiltInEncoder } = await viewportRef.current.exportBlob(
         exportFormat,
-        quality,
+        hasQuality(exportFormat) ? quality / 100 : 1,
       );
       exportRates.current[exportFormat] = (performance.now() - started) / megapixels;
       // The export still succeeds, just less tightly compressed. Say so once.
       if (usedBuiltInEncoder && !builtInEncoderNoticeShown.current) {
         builtInEncoderNoticeShown.current = true;
         notify(
-          `The optimised ${exportFormat === "image/png" ? "PNG" : "JPEG"} encoder couldn't run here, so the browser's own encoder was used. Files may be larger.`,
+          `The optimised ${FORMAT_LABELS[exportFormat]} encoder couldn't run here, so the browser's own encoder was used. Files may be larger.`,
           "info",
         );
       }
@@ -451,12 +456,12 @@ export function Editor() {
           compare={compare}
           exporting={exportEstimate !== null}
           exportFormat={exportFormat}
-          jpegQuality={jpegQuality}
+          quality={quality}
           onOpen={() => fileInputRef.current?.click()}
           onCompareChange={setCompare}
           onReset={resetAll}
           onFormatChange={setExportFormat}
-          onQualityChange={setJpegQuality}
+          onQualityChange={setQuality}
           onExport={exportImage}
         />
         <ExportProgress estimateMs={exportEstimate} />

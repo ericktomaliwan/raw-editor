@@ -16,6 +16,7 @@ const eslintConfig = defineConfig([
     "public/libraw/**",
     "public/mozjpeg/**",
     "public/oxipng/**",
+    "public/webp/**",
   ]),
 ]);
 
