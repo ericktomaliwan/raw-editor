@@ -34,7 +34,7 @@ const TITLE = `About ${SITE_NAME}: Free, Private RAW Editing in Your Browser`;
 const DESCRIPTION =
   "RAW Editor is a free online photo editor for DNG and camera RAW files. It runs entirely in your browser, so nothing is uploaded. See how it works.";
 const FEATURES = [
-  "RAW and DNG decoding on your device",
+  "Full-resolution RAW and DNG decoding on your device",
   "White balance, exposure, highlights, shadows, whites and blacks",
   "Texture, clarity, dehaze, vibrance and saturation",
   "Tone curve, eight-band color mixer and color grading",
@@ -148,8 +148,9 @@ export default function AboutPage() {
         subheadline={
           <>
             <p>
-              {SITE_NAME} opens DNG and camera RAW files, along with JPEG, PNG, WebP, AVIF and TIFF,
-              and gives you the tone and color controls photographers already know.
+              {SITE_NAME} opens DNG and camera RAW files, plus the everyday formats your browser can
+              read, such as JPEG, PNG, WebP and AVIF, and gives you the tone and color controls
+              photographers already know.
             </p>
             <p>
               There is nothing to install and no account to create. Drop in a photo and start
@@ -224,9 +225,10 @@ export default function AboutPage() {
               headline="Real RAW decoding"
               subheadline={
                 <p>
-                  Sensor data is demosaiced on your device, using the white balance your camera
-                  recorded. If a file can&apos;t be decoded, its embedded preview is opened and
-                  clearly labeled.
+                  Sensor data is demosaiced on your device at full resolution, using the white
+                  balance your camera recorded, and opens at the brightness your camera rendered it
+                  at. If a file can&apos;t be decoded, its embedded preview is opened and clearly
+                  labeled.
                 </p>
               }
             />
@@ -328,12 +330,12 @@ export default function AboutPage() {
         features={
           <>
             <Feature
-              headline="A neutral starting point"
+              headline="A flatter starting point"
               subheadline={
                 <p>
-                  RAW files open without the tone mapping and sharpening your camera or phone
-                  applies in its own viewer. Expect a flatter, softer image to begin with, ready for
-                  you to shape.
+                  RAW files open at your camera&apos;s brightness, but without the contrast curve
+                  and sharpening your camera or phone adds in its own viewer. Expect a flatter,
+                  softer image to begin with, ready for you to shape.
                 </p>
               }
             />
@@ -343,7 +345,7 @@ export default function AboutPage() {
                 <p>
                   Tone, color, curve and grading settings in a preset are applied through this
                   editor&apos;s own pipeline, so results are close rather than identical. Lens
-                  corrections and local adjustments are skipped.
+                  corrections, camera profiles and local adjustments are skipped.
                 </p>
               }
             />

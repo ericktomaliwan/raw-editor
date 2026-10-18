@@ -10,7 +10,7 @@ People who have a few RAW files and want to edit them without installing an app.
 
 ## Features
 
-- **RAW decoding on your device.** DNG and camera RAW files (`cr2`, `cr3`, `nef`, `nrw`, `arw`, `srf`, `sr2`, `dng`, `raf`, `orf`, `rw2`, `pef`, `3fr`, `iiq`, `x3f`) are decoded with LibRaw compiled to WebAssembly. JPEG, PNG, WebP, AVIF and any other format your browser can decode open too.
+- **RAW decoding on your device.** DNG and camera RAW files (`cr2`, `cr3`, `nef`, `nrw`, `arw`, `srf`, `sr2`, `dng`, `raf`, `orf`, `rw2`, `pef`, `3fr`, `iiq`, `x3f`) are decoded with LibRaw compiled to WebAssembly, always at the sensor's full resolution. They open at the brightness the camera rendered them at. JPEG, PNG, WebP, AVIF and any other format your browser can decode open too.
 - **Tone.** White balance, exposure, contrast, highlights, shadows, whites and blacks.
 - **Presence.** Texture, clarity, dehaze, vibrance and saturation.
 - **Tone curve.** Four-region parametric curve. Point curves that come with a preset are applied as well.
@@ -45,7 +45,7 @@ The hosted site counts page views with cookie-free analytics. Photos, edits and 
 
 ## Running it locally
 
-You need **Node.js 20.9 or newer** and **pnpm 10**. If you don't have pnpm, `corepack enable` will provide the version pinned in `package.json`.
+You need **Node.js 20.19 or newer** (CI uses 22) and **pnpm 10**. If you don't have pnpm, `corepack enable` will provide the version pinned in `package.json`.
 
 ```bash
 git clone https://github.com/ericktomaliwan/raw-editor.git
@@ -62,13 +62,16 @@ Then open [http://localhost:3000](http://localhost:3000).
 | `pnpm build` | Create a production build |
 | `pnpm start` | Serve the production build |
 | `pnpm lint` | Run ESLint |
-| `pnpm exec tsc --noEmit` | Type-check |
+| `pnpm typecheck` | Type-check (generates Next's route types first) |
+| `pnpm test` | Run the unit tests (`pnpm test:watch` to re-run on save) |
+| `pnpm format` | Format the code with Prettier (`pnpm format:check` only checks) |
 
 Things worth knowing:
 
 - **Use pnpm.** The lockfile and the install scripts assume it.
 - **The WebAssembly runtimes are copied, not committed.** `pnpm install`, `pnpm dev` and `pnpm build` all run `scripts/copy-wasm.mjs`, which copies the RAW decoder into `public/libraw/`, the JPEG encoder into `public/mozjpeg/`, the PNG encoder into `public/oxipng/`, the WebP encoder into `public/webp/` and the export resizer into `public/resize/`. All five folders are generated and gitignored. If you edit any `*.worker.js` under `lib/`, restart `pnpm dev` so the copy is refreshed.
-- **There is no automated test suite yet.** Changes are verified in the browser.
+- **Tests cover the logic, the browser covers the rest.** Unit tests (Vitest) cover the code in `lib/` that runs without a browser: crop geometry, curves, preset parsing and validation, undo history, export sizing and naming, RAW brightness matching, and the worker plumbing. The UI, WebGL rendering and the WebAssembly workers are checked in a browser.
+- **CI** runs lint, type-check, format check, tests and a production build on every push to `main` and on every pull request (`.github/workflows/ci.yml`).
 
 ### Configuration
 
@@ -80,7 +83,7 @@ There is one optional environment variable, described in `.env.example`:
 
 ## How it works
 
-1. **Decode.** A RAW file is handed to LibRaw running in a Web Worker, which demosaics it using the white balance the camera recorded and returns an sRGB image. If the sensor data can't be decoded, the file's embedded preview is used and the photo is labeled as a preview. Other formats go straight through the browser's own decoder.
+1. **Decode.** A RAW file is handed to LibRaw running in a Web Worker, which demosaics it at full resolution using the white balance the camera recorded and returns a 16-bit sRGB image. A plain decode looks darker than the photo the camera showed, so its brightness is set to match: by the DNG's own baseline exposure when the file has one, otherwise by comparing it with the JPEG preview the camera embedded in the file. That happens before the image is reduced to 8 bits, so lifted shadows stay smooth. If the sensor data can't be decoded, the embedded preview is used and the photo is labeled as a preview. Other formats go straight through the browser's own decoder. Anything larger than the GPU's maximum texture size is scaled down to fit.
 2. **Render.** The image is uploaded once as a WebGL 2 texture. Every adjustment is a uniform on a single fragment shader, so moving a slider is one draw call. White balance, calibration and exposure are applied in linear light; tone, curves, color and effects follow on display-referred values.
 3. **Export.** The same shader renders the photo (or the cropped area) at full resolution. For a smaller export, the unedited crop is first resampled to the target size with Lanczos3 in a worker and the shader runs on that, so sharpening and grain keep the scale the preview shows. The pixels are read back from the GPU and encoded in a second worker, by MozJPEG, OxiPNG or libwebp, with the browser's built-in encoder as a fallback.
 
@@ -97,22 +100,28 @@ app/
   globals.css         Tailwind setup and theme tokens
 components/
   editor/             the editor UI: panels, sliders, viewport, crop overlay, header
+    hooks/            image loading, drag and drop, keyboard shortcuts, export, toasts
   elements/, sections/, icons/   building blocks for the content pages
 lib/
   adjustments.ts      the edit model: fields, defaults, ranges, validation
   webgl/              renderer and the GLSL pipeline
-  raw/decoder.ts      RAW decoding (LibRaw worker client)
+  raw/                RAW decoding (LibRaw worker client) and brightness matching
+  export/             the export pipeline, its time estimate, file naming and download
+  exportFormat.ts     the export formats and what differs between them
+  workers/            shared plumbing for the encoder and resize workers
   jpeg/               MozJPEG encoder worker and its client
   png/                OxiPNG encoder worker and its client
   webp/               libwebp encoder worker and its client
   resize/             Lanczos resize worker and its client (smaller exports)
   crop.ts             crop geometry and ratio presets
   xmp.ts              .xmp preset parser
-  presets.ts          built-in presets
+  presets.ts          the preset type and built-in presets
   presetStore.ts      imported presets, kept in localStorage
   useEditHistory.ts   undo/redo
+  *.test.ts           unit tests, next to the code they cover
 scripts/copy-wasm.mjs copies the WebAssembly runtimes into public/
 next.config.ts        response headers (see Deploying)
+.github/workflows/    CI
 ```
 
 ## Deploying
@@ -126,10 +135,10 @@ Page-view analytics use `@vercel/analytics` and only record anything once Web An
 
 ## Limitations
 
-- **RAW files start out flat.** They are rendered without the tone mapping and sharpening a camera or phone applies in its own viewer, so expect a flatter, softer image to begin with.
+- **RAW files start out with less contrast than the camera's view.** They open at the camera's brightness, but without the contrast curve and sharpening a camera or phone adds in its own viewer, so expect a flatter, softer image to begin with.
 - **Presets are interpreted, not replicated.** Tone, color, curve, grading and calibration settings are mapped onto this editor's own pipeline, so results are close but not identical. Lens corrections, local adjustments, camera profiles and noise reduction are ignored.
 - **Editing is 8-bit after decoding.** Extreme adjustments can show banding that a full-depth pipeline would avoid.
-- **Very large images are downscaled** to the largest texture your GPU supports.
+- **Images larger than your GPU's texture limit are scaled down to fit.** Most desktop browsers and recent iPhones allow 16,384 pixels on a side, more than any current camera produces. Some older or budget phones allow only 4,096 or 8,192. RAW files are still decoded at full resolution first and scaled once.
 - **Not here yet:** rotate and straighten, a draggable point-curve editor, on-screen undo buttons for touch devices, and saving edits between sessions.
 - **Browser requirements:** WebGL 2 and WebAssembly. RAW decoding additionally needs a cross-origin-isolated page.
 
