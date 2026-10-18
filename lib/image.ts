@@ -55,6 +55,8 @@ export interface LoadedImage {
     metadata: RawMetadata;
     /** True if only the embedded preview could be decoded. */
     preview: boolean;
+    /** EV added at decode to match the camera's own brightness (0 = none). */
+    cameraMatchEv: number;
   };
 }
 
@@ -75,18 +77,23 @@ export async function loadImageFile(
 ): Promise<LoadedImage> {
   if (isRawFile(file)) {
     try {
-      const decoded = await decodeRawFile(file, { maxSize, onStatus: opts.onStatus });
-      // Half-size decoding isn't always enough, and the embedded preview isn't
-      // limited at all, so fit the result like any other image.
+      // Decoded at full resolution (or the embedded preview), then fitted to
+      // the GPU like any other image: scaled down once, only if it must be.
+      const decoded = await decodeRawFile(file, { onStatus: opts.onStatus });
       const bitmap = await fitWithin(decoded.bitmap, maxSize);
       return {
         bitmap,
         width: bitmap.width,
         height: bitmap.height,
-        sourceWidth: decoded.sourceWidth,
-        sourceHeight: decoded.sourceHeight,
+        // Plain numbers from the decoder, so still valid after fitWithin closes its bitmap.
+        sourceWidth: decoded.width,
+        sourceHeight: decoded.height,
         name: file.name,
-        raw: { metadata: decoded.metadata, preview: decoded.preview },
+        raw: {
+          metadata: decoded.metadata,
+          preview: decoded.preview,
+          cameraMatchEv: decoded.cameraMatchEv,
+        },
       };
     } catch (e) {
       throw new UnsupportedImageError(

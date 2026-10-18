@@ -229,7 +229,14 @@ export function Editor() {
               {image.raw && (
                 <>
                   <span className="mx-2 text-zinc-600">·</span>
-                  <span className="rounded bg-zinc-800 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-zinc-300">
+                  <span
+                    className="rounded bg-zinc-800 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-zinc-300"
+                    title={
+                      image.raw.cameraMatchEv > 0
+                        ? `Brightened ${image.raw.cameraMatchEv.toFixed(1)} EV to match the camera's own rendering`
+                        : undefined
+                    }
+                  >
                     {image.raw.preview ? "RAW preview" : "RAW"}
                   </span>
                   {rawDetails && (
