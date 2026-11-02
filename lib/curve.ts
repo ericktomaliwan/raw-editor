@@ -1,42 +1,50 @@
-import type { Adjustments, CurvePoint } from "./adjustments";
+import { type Adjustments, type CurvePoint, MAX_CURVE_POINTS } from "./adjustments";
 
 export const LUT_SIZE = 256;
 
-function isIdentity(points: CurvePoint[]): boolean {
+/** Smallest gap between the inputs of neighbouring points when editing. */
+const MIN_POINT_GAP = 1;
+
+export function isIdentity(points: CurvePoint[]): boolean {
   if (points.length === 0) return true;
-  return points.every(([x, y]) => Math.abs(x - y) < 0.5);
+  // A curve holds flat past its first and last points, so points on the
+  // diagonal only leave the image alone if they also span the whole range.
+  const xs = points.map(([x]) => x);
+  return (
+    Math.min(...xs) < 0.5 &&
+    Math.max(...xs) > 254.5 &&
+    points.every(([x, y]) => Math.abs(x - y) < 0.5)
+  );
+}
+
+/** A curve as the LUT reads it: in range, sorted by input, a later duplicate input winning. */
+function sortedCurve(points: CurvePoint[]): CurvePoint[] {
+  const sorted = points
+    .map(([x, y]) => [clamp255(x), clamp255(y)] as CurvePoint)
+    .sort((a, b) => a[0] - b[0]);
+  const out: CurvePoint[] = [];
+  for (const point of sorted) {
+    if (out.length && Math.abs(out[out.length - 1][0] - point[0]) < 1e-6) {
+      out[out.length - 1] = point;
+    } else {
+      out.push(point);
+    }
+  }
+  return out;
 }
 
 /**
  * Monotone cubic Hermite (Fritsch–Carlson) interpolation through the curve
- * points, sampled into a 0..255 lookup table. Matches how most photo editors
- * draw a point curve and never overshoots.
+ * points, sampled at each of the 256 input levels. Matches how most photo
+ * editors draw a point curve and never overshoots.
  */
-export function buildCurveLut(points: CurvePoint[]): Uint8Array {
-  const lut = new Uint8Array(LUT_SIZE);
-  if (isIdentity(points)) {
-    for (let i = 0; i < LUT_SIZE; i++) lut[i] = i;
-    return lut;
-  }
+function sampleCurve(points: CurvePoint[]): number[] {
+  if (isIdentity(points)) return Array.from({ length: LUT_SIZE }, (_, i) => i);
 
-  const pts = [...points]
-    .map(([x, y]) => [clamp255(x), clamp255(y)] as CurvePoint)
-    .sort((a, b) => a[0] - b[0]);
-  // Remove duplicate x.
-  const xs: number[] = [];
-  const ys: number[] = [];
-  for (const [x, y] of pts) {
-    if (xs.length && Math.abs(xs[xs.length - 1] - x) < 1e-6) {
-      ys[ys.length - 1] = y;
-    } else {
-      xs.push(x);
-      ys.push(y);
-    }
-  }
-  if (xs.length === 1) {
-    lut.fill(Math.round(ys[0]));
-    return lut;
-  }
+  const pts = sortedCurve(points);
+  const xs = pts.map(([x]) => x);
+  const ys = pts.map(([, y]) => y);
+  if (xs.length === 1) return new Array<number>(LUT_SIZE).fill(ys[0]);
 
   const n = xs.length;
   const d: number[] = new Array(n - 1);
@@ -67,6 +75,7 @@ export function buildCurveLut(points: CurvePoint[]): Uint8Array {
     }
   }
 
+  const samples = new Array<number>(LUT_SIZE);
   let seg = 0;
   for (let i = 0; i < LUT_SIZE; i++) {
     const x = i;
@@ -86,9 +95,14 @@ export function buildCurveLut(points: CurvePoint[]): Uint8Array {
       const h11 = t3 - t2;
       y = h00 * ys[seg] + h10 * h[seg] * m[seg] + h01 * ys[seg + 1] + h11 * h[seg] * m[seg + 1];
     }
-    lut[i] = Math.round(clamp255(y));
+    samples[i] = clamp255(y);
   }
-  return lut;
+  return samples;
+}
+
+/** The curve as a 0..255 lookup table: what the shader applies. */
+export function buildCurveLut(points: CurvePoint[]): Uint8Array {
+  return Uint8Array.from(sampleCurve(points), (y) => Math.round(y));
 }
 
 function clamp255(v: number): number {
@@ -121,4 +135,103 @@ export function hasPointCurve(adj: Adjustments): boolean {
     !isIdentity(adj.toneCurveGreen) ||
     !isIdentity(adj.toneCurveBlue)
   );
+}
+
+/** The points to show and edit for a stored curve; no curve is a straight line between two ends. */
+export function editableCurve(points: CurvePoint[]): CurvePoint[] {
+  return points.length
+    ? sortedCurve(points)
+    : [
+        [0, 0],
+        [255, 255],
+      ];
+}
+
+/**
+ * What to store after an edit: a straight line between untouched ends goes back
+ * to "no curve", so a curve put back as it was doesn't count as a change.
+ */
+export function storedCurve(points: CurvePoint[]): CurvePoint[] {
+  const untouched =
+    points.length === 2 &&
+    points[0][0] === 0 &&
+    points[0][1] === 0 &&
+    points[1][0] === 255 &&
+    points[1][1] === 255;
+  return untouched ? [] : points;
+}
+
+/**
+ * Moves one point of a sorted curve to whole levels. It stays between its
+ * neighbours, so points can't swap order during a drag.
+ */
+export function moveCurvePoint(
+  points: CurvePoint[],
+  index: number,
+  x: number,
+  y: number,
+): CurvePoint[] {
+  const lo = index > 0 ? points[index - 1][0] + MIN_POINT_GAP : 0;
+  const hi = index < points.length - 1 ? points[index + 1][0] - MIN_POINT_GAP : 255;
+  // Presets can hold points closer than the gap; those keep their input.
+  const nextX = lo > hi ? points[index][0] : Math.min(hi, Math.max(lo, Math.round(x)));
+  const next = [...points];
+  next[index] = [nextX, clamp255(Math.round(y))];
+  return next;
+}
+
+/** Adds a point to a sorted curve, or returns null if it is full or that input is taken. */
+export function insertCurvePoint(
+  points: CurvePoint[],
+  x: number,
+  y: number,
+): { points: CurvePoint[]; index: number } | null {
+  if (points.length >= MAX_CURVE_POINTS) return null;
+  const nextX = clamp255(Math.round(x));
+  const after = points.findIndex(([px]) => px > nextX);
+  const index = after === -1 ? points.length : after;
+  if (index > 0 && nextX - points[index - 1][0] < MIN_POINT_GAP) return null;
+  if (index < points.length && points[index][0] - nextX < MIN_POINT_GAP) return null;
+  const next = [...points];
+  next.splice(index, 0, [nextX, clamp255(Math.round(y))]);
+  return { points: next, index };
+}
+
+/** Removes a point between the two ends. The ends themselves can only be moved. */
+export function removeCurvePoint(points: CurvePoint[], index: number): CurvePoint[] {
+  if (index <= 0 || index >= points.length - 1) return points;
+  return points.filter((_, i) => i !== index);
+}
+
+/** Index of the point closest to (x, y) within `radius`, or -1 if none is that close. */
+export function nearestCurvePoint(
+  points: CurvePoint[],
+  x: number,
+  y: number,
+  radius: number,
+): number {
+  let nearest = -1;
+  let nearestDistance = radius;
+  points.forEach(([px, py], i) => {
+    const distance = Math.hypot(px - x, py - y);
+    if (distance <= nearestDistance) {
+      nearest = i;
+      nearestDistance = distance;
+    }
+  });
+  return nearest;
+}
+
+/**
+ * SVG path of a curve on a 255 x 255 plot (y pointing down). Drawn from the
+ * samples the LUT is rounded from: rounded ones would show as stairs on shallow
+ * slopes.
+ */
+export function curvePath(points: CurvePoint[]): string {
+  const samples = sampleCurve(points);
+  let d = "";
+  for (let i = 0; i < LUT_SIZE; i++) {
+    d += `${i ? "L" : "M"}${i} ${Math.round((255 - samples[i]) * 100) / 100}`;
+  }
+  return d;
 }

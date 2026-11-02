@@ -23,12 +23,16 @@ import {
 import { hasPointCurve } from "@/lib/curve";
 import { Section } from "./Section";
 import { Slider } from "./Slider";
+import { ToneCurveEditor } from "./ToneCurveEditor";
 
 interface Props {
   adjustments: Adjustments;
-  /** A slider or toggle moved. Repeated changes to the same settings merge into one undo step. */
-  onChange: (patch: Partial<Adjustments>) => void;
-  /** A section's Reset (or Clear): always an undo step of its own, never merged. */
+  /**
+   * A slider, toggle or curve point moved. Repeated changes to the same settings
+   * merge into one undo step; a `gesture` limits that to one drag of many on them.
+   */
+  onChange: (patch: Partial<Adjustments>, gesture?: string) => void;
+  /** A section's Reset (or a curve's Clear): always an undo step of its own, never merged. */
   onReset: (patch: Partial<Adjustments>) => void;
   disabled?: boolean;
 }
@@ -107,7 +111,6 @@ export function AdjustmentsPanel({ adjustments: a, onChange, onReset, disabled }
   const hslModified = HSL_CHANNELS.some(
     (c) => a.hslHue[c] !== 0 || a.hslSaturation[c] !== 0 || a.hslLuminance[c] !== 0,
   );
-  const pointCurve = hasPointCurve(a);
 
   return (
     <div className="flex flex-col">
@@ -138,22 +141,17 @@ export function AdjustmentsPanel({ adjustments: a, onChange, onReset, disabled }
       <Section
         title="Tone Curve"
         defaultOpen={false}
-        modified={isModified(curveKeys) || pointCurve}
+        modified={isModified(curveKeys) || hasPointCurve(a)}
         onReset={() => onReset({ ...defaultsFor(curveKeys), ...NO_POINT_CURVES })}
       >
+        <ToneCurveEditor
+          adjustments={a}
+          onChange={onChange}
+          onDiscreteChange={onReset}
+          disabled={disabled}
+        />
+        <SubHeading>Parametric</SubHeading>
         {sliders(PARAMETRIC_CURVE)}
-        {pointCurve && (
-          <div className="flex items-center justify-between rounded-md border border-zinc-800 bg-zinc-900/60 px-3 py-2 text-xs text-zinc-400">
-            <span>Point curve from preset applied</span>
-            <button
-              type="button"
-              className="text-zinc-300 hover:text-white"
-              onClick={() => onReset(NO_POINT_CURVES)}
-            >
-              Clear
-            </button>
-          </div>
-        )}
       </Section>
 
       <Section

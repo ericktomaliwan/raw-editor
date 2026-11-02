@@ -134,9 +134,13 @@ export function Editor() {
       key,
     );
   // Keyed by which settings changed, so dragging one slider is one undo step,
-  // and moving on to another slider starts the next.
-  const updateAdjustments = (patch: Partial<Adjustments>) =>
-    patchAdjustments(patch, `adjust:${Object.keys(patch).sort().join(",")}`);
+  // and moving on to another slider starts the next. A curve holds many points
+  // in one setting, so its drags add a `gesture` to stay separate steps.
+  const updateAdjustments = (patch: Partial<Adjustments>, gesture?: string) =>
+    patchAdjustments(
+      patch,
+      `adjust:${Object.keys(patch).sort().join(",")}${gesture ? `:${gesture}` : ""}`,
+    );
   /** A section's Reset: a discrete action, so no key and an undo step of its own. */
   const resetAdjustments = (patch: Partial<Adjustments>) => patchAdjustments(patch);
   /** The nav's Reset: back to the photo as it was opened, crop included. */
