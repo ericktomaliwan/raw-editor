@@ -13,7 +13,7 @@ People who have a few RAW files and want to edit them without installing an app.
 - **RAW decoding on your device.** DNG and camera RAW files (`cr2`, `cr3`, `nef`, `nrw`, `arw`, `srf`, `sr2`, `dng`, `raf`, `orf`, `rw2`, `pef`, `3fr`, `iiq`, `x3f`) are decoded with LibRaw compiled to WebAssembly, always at the sensor's full resolution. They open at the brightness the camera rendered them at. JPEG, PNG, WebP, AVIF and any other format your browser can decode open too.
 - **Tone.** White balance, exposure, contrast, highlights, shadows, whites and blacks.
 - **Presence.** Texture, clarity, dehaze, vibrance and saturation.
-- **Tone curve.** Four-region parametric curve. Point curves that come with a preset are applied as well.
+- **Tone curve.** A point curve you drag directly, for RGB or each color channel, plus a four-region parametric curve. Point curves that come with a preset appear on the graph and can be edited.
 - **Color mixer.** Hue, saturation and luminance for eight color ranges.
 - **Color grading.** Separate tints for shadows, midtones and highlights, plus a global tint.
 - **Calibration.** Shadow tint and per-primary hue and saturation.
@@ -139,7 +139,7 @@ Page-view analytics use `@vercel/analytics` and only record anything once Web An
 - **Presets are interpreted, not replicated.** Tone, color, curve, grading and calibration settings are mapped onto this editor's own pipeline, so results are close but not identical. Lens corrections, local adjustments, camera profiles and noise reduction are ignored.
 - **Editing is 8-bit after decoding.** Extreme adjustments can show banding that a full-depth pipeline would avoid.
 - **Images larger than your GPU's texture limit are scaled down to fit.** Most desktop browsers and recent iPhones allow 16,384 pixels on a side, more than any current camera produces. Some older or budget phones allow only 4,096 or 8,192. RAW files are still decoded at full resolution first and scaled once.
-- **Not here yet:** rotate and straighten, a draggable point-curve editor, on-screen undo buttons for touch devices, and saving edits between sessions.
+- **Not here yet:** rotate and straighten, on-screen undo buttons for touch devices, and saving edits between sessions.
 - **Browser requirements:** WebGL 2 and WebAssembly. RAW decoding additionally needs a cross-origin-isolated page.
 
 ## Built with
