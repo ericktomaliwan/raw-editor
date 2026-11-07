@@ -45,6 +45,11 @@ uniform mat3  u_calibration;
 uniform float u_shadowTint;
 // Detail / effects
 uniform float u_sharpness, u_vignette, u_fade, u_grain, u_grayscale;
+uniform float u_sharpenRadius;   // output pixels (0.5..3)
+uniform float u_sharpenDetail;   // 0..1
+uniform float u_sharpenMasking;  // 0..1
+uniform float u_vignetteMidpoint, u_vignetteFeather; // 0..1
+uniform float u_vignetteRoundness;                   // -1..1
 
 const float PI = 3.14159265359;
 
@@ -268,26 +273,62 @@ vec3 saturationVibrance(vec3 c) {
   return c;
 }
 
-// Unsharp mask with a 1-output-pixel radius. Taps are spaced in *output*
-// pixels (not source texels) so the effect is visible at preview scale too.
+float tapLuma(vec2 offset, float lod) {
+  return luma(textureLod(u_image, v_uv + offset, lod).rgb);
+}
+
+// Unsharp mask. Taps are spaced in *output* pixels (radius x one output pixel,
+// not source texels) so the effect is visible at preview scale too, and the
+// preview matches the export.
+// At the defaults (radius 1, detail 25, masking 0) this is a plain 3x3 unsharp
+// mask with a small noise floor.
 vec3 sharpen(vec3 c, vec3 src) {
   if (u_sharpness <= 0.0) return c;
-  vec2 o = u_outTexel;
+  float radius = u_sharpenRadius;
+  vec2 o = u_outTexel * radius;
+  // Mip level the output is drawn at. Past one pixel the taps are further apart
+  // than the texels at that level, so they read a blurrier level instead and
+  // no pixels are skipped in between.
+  float lod = u_baseLod + log2(max(radius, 1.0));
   float ls = luma(src);
-  float ln = luma(texture(u_image, v_uv + vec2(0.0, -o.y)).rgb)
-           + luma(texture(u_image, v_uv + vec2(0.0,  o.y)).rgb)
-           + luma(texture(u_image, v_uv + vec2(-o.x, 0.0)).rgb)
-           + luma(texture(u_image, v_uv + vec2( o.x, 0.0)).rgb);
-  float ld = luma(texture(u_image, v_uv + vec2(-o.x, -o.y)).rgb)
-           + luma(texture(u_image, v_uv + vec2( o.x, -o.y)).rgb)
-           + luma(texture(u_image, v_uv + vec2(-o.x,  o.y)).rgb)
-           + luma(texture(u_image, v_uv + vec2( o.x,  o.y)).rgb);
+  float lc = radius > 1.0 ? tapLuma(vec2(0.0), lod) : ls;
+  float lt = tapLuma(vec2(0.0, -o.y), lod);
+  float lb = tapLuma(vec2(0.0,  o.y), lod);
+  float ll = tapLuma(vec2(-o.x, 0.0), lod);
+  float lr = tapLuma(vec2( o.x, 0.0), lod);
+  float d1 = tapLuma(vec2(-o.x, -o.y), lod);
+  float d2 = tapLuma(vec2( o.x, -o.y), lod);
+  float d3 = tapLuma(vec2(-o.x,  o.y), lod);
+  float d4 = tapLuma(vec2( o.x,  o.y), lod);
   // Gaussian-ish 3x3 blur: centre 4, edges 2, corners 1 (sum 16)
-  float blur = (ls * 4.0 + ln * 2.0 + ld) / 16.0;
+  float blur = (lc * 4.0 + (lt + lb + ll + lr) * 2.0 + (d1 + d2 + d3 + d4)) / 16.0;
   float detail = ls - blur;
-  // Suppress amplification of near-flat areas (noise) a little.
-  float mask = smoothstep(0.0, 0.02, abs(detail));
-  return c + detail * mask * u_sharpness * 2.5;
+
+  // Detail. Small differences are left alone so flat areas (noise) aren't
+  // amplified. 25 sets that floor at 0.02. Higher values lower it to nothing at
+  // 100, so fine texture is sharpened too. Lower values raise it and also stop
+  // the result overshooting the darkest and brightest taps around it, which is
+  // what draws a halo along a strong edge. At 0 there is no overshoot at all.
+  float det = u_sharpenDetail;
+  float noiseFloor = det < 0.25 ? mix(0.04, 0.02, det / 0.25) : 0.02 * (1.0 - det) / 0.75;
+  float delta = detail * smoothstep(0.0, max(noiseFloor, 1e-4), abs(detail)) * u_sharpness * 2.5;
+  float holdHalos = 1.0 - min(det / 0.25, 1.0);
+  if (holdHalos > 0.0) {
+    float lo = min(min(min(lt, lb), min(ll, lr)), min(min(d1, d2), min(d3, d4)));
+    float hi = max(max(max(lt, lb), max(ll, lr)), max(max(d1, d2), max(d3, d4)));
+    float held = clamp(ls + delta, min(lo, ls), max(hi, ls)) - ls;
+    delta = mix(delta, held, holdHalos);
+  }
+
+  // Masking: sharpen only where there is an edge, measured as the brightness
+  // gradient across the taps. The gradient needed rises with the slider, so at
+  // 100 flat areas and fine texture are left out and only strong edges remain.
+  if (u_sharpenMasking > 0.0) {
+    float edge = length(vec2(lr - ll, lb - lt)) * 0.5;
+    float needed = u_sharpenMasking * 0.15;
+    delta *= smoothstep(needed * 0.5, needed, edge);
+  }
+  return c + delta;
 }
 
 vec3 vignette(vec3 c) {
@@ -296,11 +337,32 @@ vec3 vignette(vec3 c) {
   // the picture you keep. This also holds while the crop is being edited and
   // the whole image is on screen.
   vec2 q = (v_uv - u_cropRect.xy) / u_cropRect.zw;
-  vec2 p = (q - 0.5) * vec2(u_aspect, 1.0) / max(u_aspect, 1.0) * 2.0;
-  float d = length(p);
-  float v = smoothstep(0.45, 1.35, d);
-  float amt = u_vignette > 0.0 ? u_vignette * 0.9 : u_vignette;
-  return c * (1.0 + amt * v);
+  // -1..1 across the crop on both axes, so equal distances trace an ellipse
+  // with the crop's own proportions (roundness 0).
+  vec2 p = (q - 0.5) * 2.0;
+  float d;
+  if (u_vignetteRoundness >= 0.0) {
+    // Towards +100: a circle, measured in pixels and sized to the long edge.
+    vec2 circle = p * vec2(u_aspect, 1.0) / max(u_aspect, 1.0);
+    d = length(mix(p, circle, u_vignetteRoundness));
+  } else {
+    // Towards -100: a rounded rectangle (a superellipse that squares off).
+    float n = mix(2.0, 8.0, -u_vignetteRoundness);
+    vec2 a = abs(p);
+    d = pow(pow(a.x, n) + pow(a.y, n), 1.0 / n);
+  }
+  // Midpoint moves where the darkening is half way; feather sets how wide the
+  // transition is, down to a hard (anti-aliased) edge at 0. At 50 / 50 the
+  // darkening runs from d = 0.45 to 1.35 (1 = the middle of an edge).
+  float centre = mix(0.3, 1.5, u_vignetteMidpoint);
+  float halfWidth = max(0.9 * u_vignetteFeather, fwidth(d));
+  float v = smoothstep(centre - halfWidth, centre + halfWidth, d);
+  float amt = (u_vignette > 0.0 ? u_vignette * 0.9 : u_vignette) * v;
+  // Darkening spares highlights: bright points near the edge (a lamp, a
+  // reflection) keep most of their brightness instead of turning grey. Stays
+  // monotonic, so it never swaps the order of two tones.
+  if (amt < 0.0) amt *= 1.0 - 0.7 * smoothstep(0.7, 1.0, luma(clamp(c, 0.0, 1.0)));
+  return c * (1.0 + amt);
 }
 
 // Matte "faded film" look: blacks are lifted to a soft grey, whites are pulled

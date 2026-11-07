@@ -60,6 +60,10 @@ describe("sanitizeAdjustments", () => {
       contrast: -100,
       sharpness: 150,
     });
+    expect(sanitizeAdjustments({ sharpenRadius: 0, vignetteMidpoint: 101 })).toEqual({
+      sharpenRadius: 0.5,
+      vignetteMidpoint: 100,
+    });
     expect(sanitizeAdjustments({ exposure: "1", contrast: NaN, clarity: Infinity })).toEqual({});
   });
 

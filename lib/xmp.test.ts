@@ -49,6 +49,30 @@ describe("parseXmpPreset", () => {
     expect(p.adjustments).toEqual({ exposure: 5, sharpness: 150, shadowHue: 40 });
   });
 
+  it("reads the sharpening and vignette shape settings", () => {
+    const p = parseXmpPreset(
+      xmp(
+        `crs:Sharpness="25" crs:SharpenRadius="+1.5" crs:SharpenDetail="30" crs:SharpenEdgeMasking="10"
+         crs:PostCropVignetteAmount="-15" crs:PostCropVignetteMidpoint="40"
+         crs:PostCropVignetteRoundness="-20" crs:PostCropVignetteFeather="60"`,
+      ),
+    );
+    expect(p.adjustments).toEqual({
+      sharpness: 25,
+      sharpenRadius: 1.5,
+      sharpenDetail: 30,
+      sharpenMasking: 10,
+      vignette: -15,
+      vignetteMidpoint: 40,
+      vignetteRoundness: -20,
+      vignetteFeather: 60,
+    });
+    expect(
+      parseXmpPreset(xmp(`crs:SharpenRadius="0.1" crs:PostCropVignetteRoundness="150"`))
+        .adjustments,
+    ).toEqual({ sharpenRadius: 0.5, vignetteRoundness: 100 });
+  });
+
   it("prefers relative white balance and reads Kelvin only for a custom balance", () => {
     expect(
       parseXmpPreset(xmp(`crs:IncrementalTemperature="12" crs:Temperature="9000"`)).adjustments,

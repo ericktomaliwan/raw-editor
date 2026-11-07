@@ -82,8 +82,14 @@ export interface Adjustments {
   calBlueSaturation: number;
   // Detail
   sharpness: number; // 0..150
+  sharpenRadius: number; // 0.5..3, in output pixels
+  sharpenDetail: number; // 0..100: halo-free edges (0) .. fine texture too (100)
+  sharpenMasking: number; // 0..100: sharpen everything (0) .. strong edges only (100)
   // Effects
   vignette: number; // -100..100
+  vignetteMidpoint: number; // 0..100: how far from the centre the darkening starts
+  vignetteRoundness: number; // -100..100: rounded rectangle .. ellipse (0) .. circle
+  vignetteFeather: number; // 0..100: hard edge .. gradual
   fade: number; // 0..100, matte look: lifted blacks, softened whites
   grain: number; // 0..100
   // B&W
@@ -143,7 +149,14 @@ export const DEFAULT_ADJUSTMENTS: Adjustments = {
   calBlueHue: 0,
   calBlueSaturation: 0,
   sharpness: 0,
+  // At these three defaults sharpening is a plain 1-pixel unsharp mask.
+  sharpenRadius: 1,
+  sharpenDetail: 25,
+  sharpenMasking: 0,
   vignette: 0,
+  vignetteMidpoint: 50,
+  vignetteRoundness: 0,
+  vignetteFeather: 50,
   fade: 0,
   grain: 0,
   grayscale: false,
@@ -211,10 +224,21 @@ export const CALIBRATION_BLUE: SliderSpec[] = [
   { key: "calBlueSaturation", label: "Saturation", min: -100, max: 100 },
 ];
 
-export const DETAIL: SliderSpec[] = [{ key: "sharpness", label: "Sharpening", min: 0, max: 150 }];
+export const SHARPENING: SliderSpec[] = [
+  { key: "sharpness", label: "Amount", min: 0, max: 150 },
+  { key: "sharpenRadius", label: "Radius", min: 0.5, max: 3, step: 0.1 },
+  { key: "sharpenDetail", label: "Detail", min: 0, max: 100 },
+  { key: "sharpenMasking", label: "Masking", min: 0, max: 100 },
+];
 
-export const EFFECTS: SliderSpec[] = [
-  { key: "vignette", label: "Vignette", min: -100, max: 100 },
+export const VIGNETTE: SliderSpec[] = [
+  { key: "vignette", label: "Amount", min: -100, max: 100 },
+  { key: "vignetteMidpoint", label: "Midpoint", min: 0, max: 100 },
+  { key: "vignetteRoundness", label: "Roundness", min: -100, max: 100 },
+  { key: "vignetteFeather", label: "Feather", min: 0, max: 100 },
+];
+
+export const FILM: SliderSpec[] = [
   { key: "fade", label: "Fade", min: 0, max: 100 },
   { key: "grain", label: "Grain", min: 0, max: 100 },
 ];
@@ -267,7 +291,13 @@ const NUMERIC_RANGES: Record<NumericKey, readonly [min: number, max: number]> = 
   calBlueHue: [-100, 100],
   calBlueSaturation: [-100, 100],
   sharpness: [0, 150],
+  sharpenRadius: [0.5, 3],
+  sharpenDetail: [0, 100],
+  sharpenMasking: [0, 100],
   vignette: [-100, 100],
+  vignetteMidpoint: [0, 100],
+  vignetteRoundness: [-100, 100],
+  vignetteFeather: [0, 100],
   fade: [0, 100],
   grain: [0, 100],
 };
