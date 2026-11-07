@@ -11,14 +11,15 @@ import {
   CALIBRATION_RED,
   CALIBRATION_SHADOWS,
   DEFAULT_ADJUSTMENTS,
-  DETAIL,
-  EFFECTS,
+  FILM,
   HSL_CHANNELS,
   HSL_HUES,
   type HslChannel,
   type NumericKey,
   PARAMETRIC_CURVE,
+  SHARPENING,
   type SliderSpec,
+  VIGNETTE,
 } from "@/lib/adjustments";
 import { hasPointCurve } from "@/lib/curve";
 import { Section } from "./Section";
@@ -99,8 +100,8 @@ export function AdjustmentsPanel({ adjustments: a, onChange, onReset, disabled }
     "globalSaturation",
     "gradingBalance",
   ];
-  const detailKeys = DETAIL.map((s) => s.key);
-  const effectKeys = EFFECTS.map((s) => s.key);
+  const detailKeys = SHARPENING.map((s) => s.key);
+  const effectKeys = [...VIGNETTE, ...FILM].map((s) => s.key);
   const calibrationKeys = [
     ...CALIBRATION_SHADOWS,
     ...CALIBRATION_RED,
@@ -219,7 +220,8 @@ export function AdjustmentsPanel({ adjustments: a, onChange, onReset, disabled }
         modified={isModified(detailKeys)}
         onReset={() => resetKeys(detailKeys)}
       >
-        {sliders(DETAIL)}
+        <SubHeading>Sharpening</SubHeading>
+        {sliders(SHARPENING)}
       </Section>
 
       <Section
@@ -228,7 +230,10 @@ export function AdjustmentsPanel({ adjustments: a, onChange, onReset, disabled }
         modified={isModified(effectKeys)}
         onReset={() => resetKeys(effectKeys)}
       >
-        {sliders(EFFECTS)}
+        <SubHeading>Vignette</SubHeading>
+        {sliders(VIGNETTE)}
+        <SubHeading>Film</SubHeading>
+        {sliders(FILM)}
       </Section>
 
       <Section

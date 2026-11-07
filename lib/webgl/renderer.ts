@@ -301,7 +301,13 @@ export class Renderer {
     f("u_shadowTint", n(a.shadowTint));
 
     f("u_sharpness", n(a.sharpness));
+    f("u_sharpenRadius", a.sharpenRadius);
+    f("u_sharpenDetail", n(a.sharpenDetail));
+    f("u_sharpenMasking", n(a.sharpenMasking));
     f("u_vignette", n(a.vignette));
+    f("u_vignetteMidpoint", n(a.vignetteMidpoint));
+    f("u_vignetteRoundness", n(a.vignetteRoundness));
+    f("u_vignetteFeather", n(a.vignetteFeather));
     f("u_fade", n(a.fade));
     f("u_grain", n(a.grain));
     f("u_grayscale", a.grayscale ? 1 : 0);

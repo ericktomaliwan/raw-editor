@@ -202,7 +202,13 @@ export function parseXmpPreset(
 
   // --- Detail / effects ---
   set("sharpness", clampN(num("Sharpness"), 0, 150));
+  set("sharpenRadius", clampN(num("SharpenRadius"), 0.5, 3));
+  set("sharpenDetail", clampN(num("SharpenDetail"), 0, 100));
+  set("sharpenMasking", clampN(num("SharpenEdgeMasking"), 0, 100));
   set("vignette", clampN(first("PostCropVignetteAmount", "VignetteAmount"), -100, 100));
+  set("vignetteMidpoint", clampN(num("PostCropVignetteMidpoint"), 0, 100));
+  set("vignetteRoundness", clampN(num("PostCropVignetteRoundness"), -100, 100));
+  set("vignetteFeather", clampN(num("PostCropVignetteFeather"), 0, 100));
   set("grain", clampN(num("GrainAmount"), 0, 100));
 
   const gray = values.get("ConvertToGrayscale");
