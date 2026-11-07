@@ -205,6 +205,9 @@ export function parseXmpPreset(
   set("sharpenRadius", clampN(num("SharpenRadius"), 0.5, 3));
   set("sharpenDetail", clampN(num("SharpenDetail"), 0, 100));
   set("sharpenMasking", clampN(num("SharpenEdgeMasking"), 0, 100));
+  set("colorNoiseReduction", clampN(num("ColorNoiseReduction"), 0, 100));
+  set("colorNoiseDetail", clampN(num("ColorNoiseReductionDetail"), 0, 100));
+  set("colorNoiseSmoothness", clampN(num("ColorNoiseReductionSmoothness"), 0, 100));
   set("vignette", clampN(first("PostCropVignetteAmount", "VignetteAmount"), -100, 100));
   set("vignetteMidpoint", clampN(num("PostCropVignetteMidpoint"), 0, 100));
   set("vignetteRoundness", clampN(num("PostCropVignetteRoundness"), -100, 100));
