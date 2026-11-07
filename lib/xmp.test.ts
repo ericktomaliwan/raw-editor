@@ -73,6 +73,19 @@ describe("parseXmpPreset", () => {
     ).toEqual({ sharpenRadius: 0.5, vignetteRoundness: 100 });
   });
 
+  it("reads the colour noise reduction settings", () => {
+    const p = parseXmpPreset(
+      xmp(
+        `crs:ColorNoiseReduction="25" crs:ColorNoiseReductionDetail="50" crs:ColorNoiseReductionSmoothness="120"`,
+      ),
+    );
+    expect(p.adjustments).toEqual({
+      colorNoiseReduction: 25,
+      colorNoiseDetail: 50,
+      colorNoiseSmoothness: 100,
+    });
+  });
+
   it("prefers relative white balance and reads Kelvin only for a custom balance", () => {
     expect(
       parseXmpPreset(xmp(`crs:IncrementalTemperature="12" crs:Temperature="9000"`)).adjustments,

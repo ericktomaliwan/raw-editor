@@ -10,6 +10,7 @@ import {
   CALIBRATION_GREEN,
   CALIBRATION_RED,
   CALIBRATION_SHADOWS,
+  COLOR_NOISE,
   DEFAULT_ADJUSTMENTS,
   FILM,
   HSL_CHANNELS,
@@ -100,7 +101,7 @@ export function AdjustmentsPanel({ adjustments: a, onChange, onReset, disabled }
     "globalSaturation",
     "gradingBalance",
   ];
-  const detailKeys = SHARPENING.map((s) => s.key);
+  const detailKeys = [...SHARPENING, ...COLOR_NOISE].map((s) => s.key);
   const effectKeys = [...VIGNETTE, ...FILM].map((s) => s.key);
   const calibrationKeys = [
     ...CALIBRATION_SHADOWS,
@@ -222,6 +223,8 @@ export function AdjustmentsPanel({ adjustments: a, onChange, onReset, disabled }
       >
         <SubHeading>Sharpening</SubHeading>
         {sliders(SHARPENING)}
+        <SubHeading>Color Noise Reduction</SubHeading>
+        {sliders(COLOR_NOISE)}
       </Section>
 
       <Section

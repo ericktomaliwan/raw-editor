@@ -304,6 +304,9 @@ export class Renderer {
     f("u_sharpenRadius", a.sharpenRadius);
     f("u_sharpenDetail", n(a.sharpenDetail));
     f("u_sharpenMasking", n(a.sharpenMasking));
+    f("u_colorNoise", n(a.colorNoiseReduction));
+    f("u_colorNoiseDetail", n(a.colorNoiseDetail));
+    f("u_colorNoiseSmooth", n(a.colorNoiseSmoothness));
     f("u_vignette", n(a.vignette));
     f("u_vignetteMidpoint", n(a.vignetteMidpoint));
     f("u_vignetteRoundness", n(a.vignetteRoundness));

@@ -85,6 +85,9 @@ export interface Adjustments {
   sharpenRadius: number; // 0.5..3, in output pixels
   sharpenDetail: number; // 0..100: halo-free edges (0) .. fine texture too (100)
   sharpenMasking: number; // 0..100: sharpen everything (0) .. strong edges only (100)
+  colorNoiseReduction: number; // 0..100
+  colorNoiseDetail: number; // 0..100: how strictly colour edges are kept apart
+  colorNoiseSmoothness: number; // 0..100: how much large blotches are evened out
   // Effects
   vignette: number; // -100..100
   vignetteMidpoint: number; // 0..100: how far from the centre the darkening starts
@@ -153,6 +156,9 @@ export const DEFAULT_ADJUSTMENTS: Adjustments = {
   sharpenRadius: 1,
   sharpenDetail: 25,
   sharpenMasking: 0,
+  colorNoiseReduction: 0,
+  colorNoiseDetail: 50,
+  colorNoiseSmoothness: 50,
   vignette: 0,
   vignetteMidpoint: 50,
   vignetteRoundness: 0,
@@ -231,6 +237,12 @@ export const SHARPENING: SliderSpec[] = [
   { key: "sharpenMasking", label: "Masking", min: 0, max: 100 },
 ];
 
+export const COLOR_NOISE: SliderSpec[] = [
+  { key: "colorNoiseReduction", label: "Amount", min: 0, max: 100 },
+  { key: "colorNoiseDetail", label: "Detail", min: 0, max: 100 },
+  { key: "colorNoiseSmoothness", label: "Smoothness", min: 0, max: 100 },
+];
+
 export const VIGNETTE: SliderSpec[] = [
   { key: "vignette", label: "Amount", min: -100, max: 100 },
   { key: "vignetteMidpoint", label: "Midpoint", min: 0, max: 100 },
@@ -294,6 +306,9 @@ const NUMERIC_RANGES: Record<NumericKey, readonly [min: number, max: number]> = 
   sharpenRadius: [0.5, 3],
   sharpenDetail: [0, 100],
   sharpenMasking: [0, 100],
+  colorNoiseReduction: [0, 100],
+  colorNoiseDetail: [0, 100],
+  colorNoiseSmoothness: [0, 100],
   vignette: [-100, 100],
   vignetteMidpoint: [0, 100],
   vignetteRoundness: [-100, 100],

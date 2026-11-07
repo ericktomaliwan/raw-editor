@@ -48,6 +48,7 @@ uniform float u_sharpness, u_vignette, u_fade, u_grain, u_grayscale;
 uniform float u_sharpenRadius;   // output pixels (0.5..3)
 uniform float u_sharpenDetail;   // 0..1
 uniform float u_sharpenMasking;  // 0..1
+uniform float u_colorNoise, u_colorNoiseDetail, u_colorNoiseSmooth; // 0..1
 uniform float u_vignetteMidpoint, u_vignetteFeather; // 0..1
 uniform float u_vignetteRoundness;                   // -1..1
 
@@ -90,6 +91,58 @@ float hueDist(float a, float b) {
 }
 
 // ---------- stages ----------
+
+// How much a neighbour may count towards this pixel's colour: less the more
+// its brightness (dl) and colour (dc) differ, so colour doesn't spread across
+// an edge. sl and sc are the differences at which it counts about a third.
+float noiseWeight(float dl, vec3 dc, float sl, float sc) {
+  float a = dl / sl;
+  float b = length(dc) / sc;
+  return exp(-a * a - b * b);
+}
+
+// Colour noise reduction, on the source before any other stage (the colour
+// stages would amplify the noise). Each pixel keeps its own brightness; its
+// colour (rgb minus luma) is replaced by a weighted average of the colour
+// around it: a 3x3 grid of taps on a mip level, from about 4 output pixels
+// across at a low amount to about 25 at 100. Detail tightens the weights, so
+// thin coloured lines and colour edges survive. Smoothness adds one sample 8x
+// wider, for large, soft blotches. Levels and spacing are relative to the
+// output, like presence and sharpening, so the preview matches the export.
+vec3 colorNoiseReduction(vec3 src) {
+  if (u_colorNoise <= 0.0) return src;
+  float l0 = luma(src);
+  vec3 ch0 = src - l0;
+  float k = mix(0.5, 3.0, u_colorNoise); // tap spacing: 2^k output pixels
+  float lod = u_baseLod + k;
+  vec2 o = u_outTexel * exp2(k);
+  float sl = mix(0.2, 0.03, u_colorNoiseDetail);
+  float sc = mix(0.4, 0.05, u_colorNoiseDetail);
+  // A little of the pixel's own colour, so it is kept when no neighbour matches.
+  vec3 sum = ch0 * 0.05;
+  float wsum = 0.05;
+  for (int j = -1; j <= 1; j++) {
+    for (int i = -1; i <= 1; i++) {
+      vec3 t = textureLod(u_image, v_uv + vec2(float(i), float(j)) * o, lod).rgb;
+      float lt = luma(t);
+      float w = noiseWeight(lt - l0, t - lt - ch0, sl, sc);
+      sum += (t - lt) * w;
+      wsum += w;
+    }
+  }
+  if (u_colorNoiseSmooth > 0.0) {
+    vec3 t = textureLod(u_image, v_uv, lod + 3.0).rgb;
+    float lt = luma(t);
+    float w = 8.0 * u_colorNoiseSmooth * noiseWeight(lt - l0, t - lt - ch0, sl, sc);
+    sum += (t - lt) * w;
+    wsum += w;
+  }
+  // Fades in over the first quarter; beyond that the amount only widens the area.
+  vec3 ch = mix(ch0, sum / wsum, min(u_colorNoise * 4.0, 1.0));
+  // Clamped: a negative channel would turn into NaN in srgbToLinear's pow().
+  return clamp(l0 + ch, 0.0, 1.0);
+}
+
 vec3 whiteBalance(vec3 lin) {
   // temperature: + = warmer (more red, less blue); tint: + = magenta, - = green
   float t = u_temperature * 0.35;
@@ -394,6 +447,8 @@ void main() {
   vec4 texel = texture(u_image, v_uv);
   vec3 src = texel.rgb;
   if (u_bypass > 0.5) { outColor = vec4(src, texel.a); return; }
+
+  src = colorNoiseReduction(src);
 
   // Linear-light stages
   vec3 lin = srgbToLinear(src);
