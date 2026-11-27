@@ -52,7 +52,7 @@ import { useMediaQuery } from "./hooks/useMediaQuery";
 import { useToast } from "./hooks/useToast";
 import { useWindowFileDrop } from "./hooks/useWindowFileDrop";
 import { ImageViewport, type ViewportHandle } from "./ImageViewport";
-import { LayerSettings } from "./LayerSettings";
+import { LayerAdjustments, LayerMaskSettings, LayerSettings } from "./LayerSettings";
 import { LayersPanel } from "./LayersPanel";
 import { MaskOverlay } from "./MaskOverlay";
 import { PresetsPanel } from "./PresetsPanel";
@@ -325,11 +325,12 @@ export function Editor() {
     onBrushSize: (up) => setBrush((b) => ({ ...b, size: stepBrushSize(b.size, up) })),
   });
 
-  // Wide screens get a third column, on the left, for everything about layers,
-  // and the right sidebar keeps the global adjustments. Narrower screens have
-  // one sidebar, where a selected layer's settings stand in for the global
-  // adjustments until it's deselected. (Three columns need about 1280px for
-  // the photo to keep a useful size.)
+  // Wide screens get a third column, on the left, for the layers and the
+  // selected layer's mask; its sliders take the place of the global ones in
+  // the right sidebar (only one set of sliders is ever on screen). Narrower
+  // screens have one sidebar, where the whole layer panel stands in for the
+  // global adjustments. Either way, deselecting brings the global ones back.
+  // (Three columns need about 1280px for the photo to keep a useful size.)
   const wide = useMediaQuery("(min-width: 80rem)");
   const layersPanel = (
     <LayersPanel
@@ -347,30 +348,31 @@ export function Editor() {
       }}
     />
   );
-  const layerSettings = selectedLayer && (
-    <LayerSettings
-      key={selectedLayer.id}
-      layer={selectedLayer}
-      disabled={!image}
-      onUpdate={(update, key) => updateLayer(selectedLayer.id, update, key)}
-      onDone={() => selectLayer(null)}
-      onDelete={() => deleteLayer(selectedLayer.id)}
-      showMask={showMask}
-      onShowMaskChange={setShowMask}
-      brushMode={brushMode}
-      onBrushModeChange={(mode) => {
-        setBrushMode(mode);
-        if (mode !== "off") setPicking(false);
-      }}
-      brush={brush}
-      onBrushChange={(patch) => setBrush((b) => ({ ...b, ...patch }))}
-      picking={picking}
-      onPickingChange={(on) => {
-        setPicking(on);
-        if (on) setBrushMode("off");
-      }}
-    />
-  );
+  const layerProps = selectedLayer && {
+    layer: selectedLayer,
+    disabled: !image,
+    onUpdate: (update: (layer: Layer) => Layer, key?: string) =>
+      updateLayer(selectedLayer.id, update, key),
+    onDone: () => selectLayer(null),
+  };
+  const maskProps = layerProps && {
+    ...layerProps,
+    onDelete: () => deleteLayer(layerProps.layer.id),
+    showMask,
+    onShowMaskChange: setShowMask,
+    brushMode,
+    onBrushModeChange: (mode: BrushMode) => {
+      setBrushMode(mode);
+      if (mode !== "off") setPicking(false);
+    },
+    brush,
+    onBrushChange: (patch: Partial<BrushSettings>) => setBrush((b) => ({ ...b, ...patch })),
+    picking,
+    onPickingChange: (on: boolean) => {
+      setPicking(on);
+      if (on) setBrushMode("off");
+    },
+  };
   const adjustmentsPanel = (
     <AdjustmentsPanel
       adjustments={adjustments}
@@ -473,12 +475,15 @@ export function Editor() {
             aria-label="Layers"
           >
             {layersPanel}
-            {layerSettings ??
-              (layers.length > 0 && (
+            {maskProps ? (
+              <LayerMaskSettings key={maskProps.layer.id} {...maskProps} />
+            ) : (
+              layers.length > 0 && (
                 <p className="px-4 py-3 text-[11px] leading-relaxed text-zinc-500">
                   Select a layer to move its mask and change its settings.
                 </p>
-              ))}
+              )
+            )}
           </aside>
         )}
         <main className="relative min-h-[50vh] bg-[#111113] p-6 lg:min-h-0">
@@ -570,11 +575,19 @@ export function Editor() {
             onAspectChange={chooseAspect}
           />
           {wide ? (
-            adjustmentsPanel
+            layerProps ? (
+              <LayerAdjustments key={layerProps.layer.id} {...layerProps} banner />
+            ) : (
+              adjustmentsPanel
+            )
           ) : (
             <>
               {layersPanel}
-              {layerSettings || adjustmentsPanel}
+              {maskProps ? (
+                <LayerSettings key={maskProps.layer.id} {...maskProps} />
+              ) : (
+                adjustmentsPanel
+              )}
             </>
           )}
           <div className="px-4 py-3 text-[11px] leading-relaxed text-zinc-600">

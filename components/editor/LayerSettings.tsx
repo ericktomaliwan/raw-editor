@@ -35,11 +35,15 @@ import { Slider } from "./Slider";
 /** A change to the layer itself; `key` merges repeats into one undo step (none = a step of its own). */
 export type LayerUpdate = (update: (layer: Layer) => Layer, key?: string) => void;
 
-interface Props {
+interface LayerProps {
   layer: Layer;
   disabled?: boolean;
   onUpdate: LayerUpdate;
+  /** Deselect the layer. */
   onDone: () => void;
+}
+
+interface MaskProps extends LayerProps {
   onDelete: () => void;
   showMask: boolean;
   onShowMaskChange: (show: boolean) => void;
@@ -59,10 +63,26 @@ const TRACKS: Partial<Record<LocalKey, string>> = {
 };
 
 /**
- * The selected layer's settings, shown in place of the global adjustments:
- * its mask (shape, brush, ranges) and what it changes where the mask is.
+ * Everything about the selected layer in one panel: where it applies, then
+ * what it changes. For the single sidebar of narrower screens, where it
+ * stands in for the global adjustments.
  */
-export function LayerSettings({
+export function LayerSettings(props: MaskProps) {
+  return (
+    <div className="flex flex-col">
+      <LayerMaskSettings {...props} />
+      <LayerAdjustments
+        layer={props.layer}
+        disabled={props.disabled}
+        onUpdate={props.onUpdate}
+        onDone={props.onDone}
+      />
+    </div>
+  );
+}
+
+/** The selected layer's name and where it applies: its mask (shape, brush) and its ranges. */
+export function LayerMaskSettings({
   layer,
   disabled,
   onUpdate,
@@ -76,32 +96,11 @@ export function LayerSettings({
   onBrushChange,
   picking,
   onPickingChange,
-}: Props) {
-  const a = layer.adjustments;
+}: MaskProps) {
   const id = layer.id;
-
-  const setLocal = (patch: Partial<LocalAdjustments>, key?: string) =>
-    onUpdate((l) => ({ ...l, adjustments: { ...l.adjustments, ...patch } }), key);
-  const localSliders = (specs: LocalSliderSpec[]) =>
-    specs.map((s) => (
-      <Slider
-        key={s.key}
-        label={s.label}
-        value={a[s.key]}
-        min={s.min}
-        max={s.max}
-        step={s.step}
-        defaultValue={DEFAULT_LOCAL[s.key]}
-        track={TRACKS[s.key]}
-        disabled={disabled}
-        onChange={(v) => setLocal({ [s.key]: v }, `layer:${id}:adjust:${s.key}`)}
-      />
-    ));
-
   const mask = layer.mask;
   const lum = layer.luminance;
   const col = layer.color;
-  const tint = a.colorSaturation > 0 ? `hsl(${a.colorHue} 80% 55%)` : "transparent";
 
   return (
     <div className="flex flex-col">
@@ -365,9 +364,75 @@ export function LayerSettings({
           </>
         )}
       </Section>
+    </div>
+  );
 
+  function setRange<K extends "luminance" | "color">(
+    which: K,
+    patch: Partial<NonNullable<Layer[K]>>,
+  ) {
+    onUpdate((l) => {
+      const current = l[which];
+      return current ? { ...l, [which]: { ...current, ...patch } } : l;
+    }, `layer:${id}:${which}`);
+  }
+}
+
+/**
+ * What the selected layer changes where its mask is. With `banner`, it is
+ * headed by the layer's name, for where it takes the place of the global
+ * adjustments, so it's clear whose sliders these are.
+ */
+export function LayerAdjustments({
+  layer,
+  disabled,
+  onUpdate,
+  onDone,
+  banner,
+}: LayerProps & { banner?: boolean }) {
+  const a = layer.adjustments;
+  const id = layer.id;
+  const setLocal = (patch: Partial<LocalAdjustments>, key?: string) =>
+    onUpdate((l) => ({ ...l, adjustments: { ...l.adjustments, ...patch } }), key);
+  const localSliders = (specs: LocalSliderSpec[]) =>
+    specs.map((s) => (
+      <Slider
+        key={s.key}
+        label={s.label}
+        value={a[s.key]}
+        min={s.min}
+        max={s.max}
+        step={s.step}
+        defaultValue={DEFAULT_LOCAL[s.key]}
+        track={TRACKS[s.key]}
+        disabled={disabled}
+        onChange={(v) => setLocal({ [s.key]: v }, `layer:${id}:adjust:${s.key}`)}
+      />
+    ));
+  const tint = a.colorSaturation > 0 ? `hsl(${a.colorHue} 80% 55%)` : "transparent";
+
+  return (
+    <div className="flex flex-col">
+      {banner && (
+        <div className="flex items-center gap-2 border-b border-sky-500/30 bg-sky-500/10 px-4 py-2.5">
+          <span className="text-[10px] font-semibold uppercase tracking-wide text-sky-300">
+            Layer
+          </span>
+          <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-zinc-100">
+            {layer.name}
+          </span>
+          <button
+            type="button"
+            onClick={onDone}
+            className="rounded border border-sky-500/40 px-2 py-0.5 text-[11px] text-sky-100 hover:bg-sky-500/20"
+            title="Finish editing this layer and go back to the whole-photo adjustments (Esc)"
+          >
+            Done
+          </button>
+        </div>
+      )}
       <Section
-        title="Adjustments"
+        title={banner ? "Layer Adjustments" : "Adjustments"}
         modified={!isLocalDefault(a)}
         onReset={() => setLocal({ ...DEFAULT_LOCAL })}
       >
@@ -389,16 +454,6 @@ export function LayerSettings({
       </Section>
     </div>
   );
-
-  function setRange<K extends "luminance" | "color">(
-    which: K,
-    patch: Partial<NonNullable<Layer[K]>>,
-  ) {
-    onUpdate((l) => {
-      const current = l[which];
-      return current ? { ...l, [which]: { ...current, ...patch } } : l;
-    }, `layer:${id}:${which}`);
-  }
 }
 
 function Hint({ children }: { children: React.ReactNode }) {
