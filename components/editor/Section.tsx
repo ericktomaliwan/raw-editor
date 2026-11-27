@@ -10,6 +10,8 @@ interface SectionProps {
   modified?: boolean;
   onReset?: () => void;
   actions?: ReactNode;
+  /** False for a section that is a whole panel's heading: always open, no toggle. */
+  collapsible?: boolean;
 }
 
 export function Section({
@@ -19,31 +21,44 @@ export function Section({
   modified,
   onReset,
   actions,
+  collapsible = true,
 }: SectionProps) {
-  const [open, setOpen] = useState(defaultOpen);
+  const [openState, setOpen] = useState(defaultOpen);
+  const open = openState || !collapsible;
   return (
     <section className="border-b border-zinc-800">
-      <div className="flex items-center gap-2 px-4 py-2.5 hover:bg-zinc-900/60">
-        <button
-          type="button"
-          onClick={() => setOpen((o) => !o)}
-          className="flex flex-1 items-center gap-2 text-left text-[13px] font-medium text-zinc-200"
-          aria-expanded={open}
-        >
-          <svg
-            width="10"
-            height="10"
-            viewBox="0 0 10 10"
-            className={`text-zinc-500 transition-transform ${open ? "rotate-90" : ""}`}
-            aria-hidden
+      <div
+        className={`flex items-center gap-2 px-4 py-2.5 ${collapsible ? "hover:bg-zinc-900/60" : ""}`}
+      >
+        {collapsible ? (
+          <button
+            type="button"
+            onClick={() => setOpen((o) => !o)}
+            className="flex flex-1 items-center gap-2 text-left text-[13px] font-medium text-zinc-200"
+            aria-expanded={open}
           >
-            <path d="M3 1l4 4-4 4" fill="none" stroke="currentColor" strokeWidth="1.5" />
-          </svg>
-          {title}
-          {modified && (
-            <span className="h-1.5 w-1.5 rounded-full bg-sky-400" aria-label="modified" />
-          )}
-        </button>
+            <svg
+              width="10"
+              height="10"
+              viewBox="0 0 10 10"
+              className={`text-zinc-500 transition-transform ${open ? "rotate-90" : ""}`}
+              aria-hidden
+            >
+              <path d="M3 1l4 4-4 4" fill="none" stroke="currentColor" strokeWidth="1.5" />
+            </svg>
+            {title}
+            {modified && (
+              <span className="h-1.5 w-1.5 rounded-full bg-sky-400" aria-label="modified" />
+            )}
+          </button>
+        ) : (
+          <h2 className="flex flex-1 items-center gap-2 text-[13px] font-medium text-zinc-200">
+            {title}
+            {modified && (
+              <span className="h-1.5 w-1.5 rounded-full bg-sky-400" aria-label="modified" />
+            )}
+          </h2>
+        )}
         {actions}
         {onReset && modified && (
           <button
