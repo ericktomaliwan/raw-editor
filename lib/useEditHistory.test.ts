@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createDefaultAdjustments } from "./adjustments";
 import { FREE_ASPECT } from "./crop";
+import { createLayer } from "./layers";
 import {
   COALESCE_MS,
   type EditState,
@@ -8,6 +9,7 @@ import {
   historyReducer,
   type HistoryAction,
   LIMIT,
+  sameValue,
 } from "./useEditHistory";
 
 const initial: EditState = {
@@ -15,6 +17,7 @@ const initial: EditState = {
   activePresetId: null,
   crop: null,
   aspect: FREE_ASPECT,
+  layers: [],
 };
 const start = (): History => ({
   past: [],
@@ -109,5 +112,79 @@ describe("historyReducer", () => {
     expect(h.past).toEqual([]);
     expect(h.future).toEqual([]);
     expect(exposure(h)).toBe(1);
+  });
+});
+
+describe("layers in the history", () => {
+  const layer = createLayer("brush", {
+    id: "a",
+    name: "Brush 1",
+    view: { x: 0, y: 0, width: 100, height: 100 },
+    imageWidth: 100,
+    imageHeight: 100,
+  });
+  const addLayer: HistoryAction = {
+    type: "apply",
+    update: (prev) => ({ ...prev, layers: [...prev.layers, layer] }),
+    key: undefined,
+    at: 0,
+  };
+  const stroke = { erase: false, size: 0.05, feather: 50, flow: 100, points: [0.5, 0.5] };
+  const paint: HistoryAction = {
+    type: "apply",
+    update: (prev) => ({
+      ...prev,
+      layers: prev.layers.map((l) => ({ ...l, strokes: [...l.strokes, stroke] })),
+    }),
+    key: undefined,
+    at: 0,
+  };
+
+  it("undoes a stroke, then the layer", () => {
+    const h = run(start(), addLayer, paint);
+    expect(h.present.layers[0].strokes).toHaveLength(1);
+    const once = run(h, { type: "undo" });
+    expect(once.present.layers[0].strokes).toHaveLength(0);
+    expect(run(once, { type: "undo" }).present.layers).toHaveLength(0);
+  });
+
+  it("shares unchanged strokes between steps", () => {
+    const h = run(start(), addLayer, paint, setExposure(1));
+    expect(h.present.layers[0].strokes[0]).toBe(h.past[h.past.length - 1].layers[0].strokes[0]);
+  });
+
+  it("drops a layer change that changes nothing", () => {
+    const h = run(start(), addLayer);
+    const noop: HistoryAction = {
+      type: "apply",
+      update: (prev) => ({ ...prev, layers: prev.layers.map((l) => ({ ...l })) }),
+      key: undefined,
+      at: 0,
+    };
+    expect(run(h, noop)).toBe(h);
+  });
+});
+
+describe("sameValue", () => {
+  it("compares plain data deeply", () => {
+    expect(sameValue({ a: [1, { b: 2 }] }, { a: [1, { b: 2 }] })).toBe(true);
+    expect(sameValue({ a: [1, { b: 2 }] }, { a: [1, { b: 3 }] })).toBe(false);
+    expect(sameValue([1, 2], [1, 2, 3])).toBe(false);
+    expect(sameValue({ a: 1 }, { a: 1, b: 2 })).toBe(false);
+    expect(sameValue({ a: 1, b: undefined }, { a: 1, c: undefined })).toBe(false);
+    expect(sameValue([1], { 0: 1 })).toBe(false);
+    expect(sameValue(null, {})).toBe(false);
+    expect(sameValue(Number.NaN, Number.NaN)).toBe(true);
+  });
+
+  it("doesn't walk into parts that are the same object", () => {
+    const big = Array.from({ length: 5 }, () => ({ x: 1 }));
+    const trap = new Proxy(big, {
+      get(target, prop, receiver) {
+        if (prop === "length") throw new Error("walked");
+        return Reflect.get(target, prop, receiver);
+      },
+    });
+    expect(sameValue({ s: trap }, { s: trap })).toBe(true);
   });
 });

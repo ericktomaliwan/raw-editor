@@ -182,3 +182,43 @@ export function stripExtension(name: string) {
   const i = name.lastIndexOf(".");
   return i === -1 ? name : name.slice(0, i);
 }
+
+/**
+ * The average colour (0..255 RGB) of the 5 x 5 pixels around (x, y) of a
+ * bitmap, or null if the browser can't read it back. For the colour range
+ * eyedropper: a small average is steadier than a single noisy pixel.
+ */
+export function sampleColor(
+  bitmap: ImageBitmap,
+  x: number,
+  y: number,
+): [r: number, g: number, b: number] | null {
+  const size = 5;
+  const w = Math.min(size, bitmap.width);
+  const h = Math.min(size, bitmap.height);
+  const canvas =
+    typeof OffscreenCanvas !== "undefined"
+      ? new OffscreenCanvas(w, h)
+      : Object.assign(document.createElement("canvas"), { width: w, height: h });
+  const ctx = canvas.getContext("2d", { willReadFrequently: true }) as
+    CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null;
+  if (!ctx) return null;
+  const sx = Math.min(Math.max(Math.round(x) - (w >> 1), 0), bitmap.width - w);
+  const sy = Math.min(Math.max(Math.round(y) - (h >> 1), 0), bitmap.height - h);
+  try {
+    ctx.drawImage(bitmap, sx, sy, w, h, 0, 0, w, h);
+    const { data } = ctx.getImageData(0, 0, w, h);
+    let r = 0;
+    let g = 0;
+    let b = 0;
+    for (let i = 0; i < data.length; i += 4) {
+      r += data[i];
+      g += data[i + 1];
+      b += data[i + 2];
+    }
+    const n = data.length / 4;
+    return [r / n, g / n, b / n];
+  } catch {
+    return null;
+  }
+}

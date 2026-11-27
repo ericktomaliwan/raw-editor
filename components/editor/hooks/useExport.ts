@@ -6,6 +6,7 @@ import { ExportEstimator } from "@/lib/export/estimate";
 import { EXPORT_FORMATS, type ExportFormat, QUALITY_DEFAULT } from "@/lib/exportFormat";
 import { exportDimensions, type ExportSize } from "@/lib/exportSize";
 import type { LoadedImage } from "@/lib/image";
+import type { Layer } from "@/lib/layers";
 import type { ViewportHandle } from "../ImageViewport";
 import type { Notify } from "./useToast";
 
@@ -18,12 +19,14 @@ export function useExport({
   viewportRef,
   image,
   adjustments,
+  layers,
   crop,
   notify,
 }: {
   viewportRef: RefObject<ViewportHandle | null>;
   image: LoadedImage | null;
   adjustments: Adjustments;
+  layers: readonly Layer[];
   /** In image pixels; null = the whole image. */
   crop: CropRect | null;
   notify: Notify;
@@ -50,6 +53,7 @@ export function useExport({
     try {
       const result = await viewport.exportImage({
         adjustments,
+        layers,
         crop: area,
         format,
         // PNG is lossless; its encoder ignores the value.

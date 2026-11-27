@@ -23,6 +23,7 @@ import {
   VIGNETTE,
 } from "@/lib/adjustments";
 import { hasPointCurve } from "@/lib/curve";
+import { HUE_TRACK, SubHeading, TEMPERATURE_TRACK, TINT_TRACK, ToggleButton } from "./controls";
 import { Section } from "./Section";
 import { Slider } from "./Slider";
 import { ToneCurveEditor } from "./ToneCurveEditor";
@@ -54,9 +55,9 @@ function defaultsFor(keys: readonly NumericKey[]): Partial<Adjustments> {
 }
 
 const WB_TRACKS: Partial<Record<NumericKey, string>> = {
-  temperature: "linear-gradient(90deg,#3b82f6,#a1a1aa,#f59e0b)",
-  tint: "linear-gradient(90deg,#22c55e,#a1a1aa,#d946ef)",
-  shadowTint: "linear-gradient(90deg,#22c55e,#a1a1aa,#d946ef)",
+  temperature: TEMPERATURE_TRACK,
+  tint: TINT_TRACK,
+  shadowTint: TINT_TRACK,
   calRedHue: "linear-gradient(90deg,hsl(330 80% 55%),hsl(0 80% 55%),hsl(30 80% 55%))",
   calGreenHue: "linear-gradient(90deg,hsl(90 70% 50%),hsl(120 70% 45%),hsl(150 70% 45%))",
   calBlueHue: "linear-gradient(90deg,hsl(210 80% 55%),hsl(240 80% 60%),hsl(270 80% 60%))",
@@ -64,9 +65,6 @@ const WB_TRACKS: Partial<Record<NumericKey, string>> = {
   calGreenSaturation: "linear-gradient(90deg,#71717a,hsl(120 70% 45%))",
   calBlueSaturation: "linear-gradient(90deg,#71717a,hsl(240 80% 60%))",
 };
-
-const HUE_TRACK =
-  "linear-gradient(90deg,#f00 0%,#ff0 17%,#0f0 33%,#0ff 50%,#00f 67%,#f0f 83%,#f00 100%)";
 
 export function AdjustmentsPanel({ adjustments: a, onChange, onReset, disabled }: Props) {
   const isModified = (keys: readonly NumericKey[]) =>
@@ -255,36 +253,6 @@ export function AdjustmentsPanel({ adjustments: a, onChange, onReset, disabled }
         {sliders(CALIBRATION_BLUE)}
       </Section>
     </div>
-  );
-}
-
-function SubHeading({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="pt-1 text-[11px] font-medium uppercase tracking-wide text-zinc-500">
-      {children}
-    </div>
-  );
-}
-
-function ToggleButton({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`rounded px-2.5 py-0.5 text-[11px] ${
-        active ? "bg-zinc-700 text-white" : "text-zinc-400 hover:text-zinc-200"
-      }`}
-    >
-      {children}
-    </button>
   );
 }
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import {
   type Adjustments,
   applyPreset,
@@ -17,7 +17,24 @@ import {
   resolveAspect,
 } from "@/lib/crop";
 import type { DroppedFile } from "@/lib/dropFiles";
-import { isXmpFile, RAW_EXTENSIONS, stripExtension } from "@/lib/image";
+import { isXmpFile, RAW_EXTENSIONS, sampleColor, stripExtension } from "@/lib/image";
+import {
+  type BrushStroke,
+  createLayer,
+  type Layer,
+  type LayerKind,
+  MAX_LAYERS,
+  newLayerId,
+  nextLayerName,
+  pickedHue,
+} from "@/lib/layers";
+import {
+  type BrushMode,
+  type BrushSettings,
+  DEFAULT_BRUSH,
+  stepBrushSize,
+} from "@/lib/masks/brush";
+import type { UV } from "@/lib/masks/geometry";
 import { useImportedPresets } from "@/lib/presetStore";
 import { BUILTIN_PRESETS, type Preset } from "@/lib/presets";
 import { formatRawMetadata } from "@/lib/raw/decoder";
@@ -34,6 +51,9 @@ import { useImageLoader } from "./hooks/useImageLoader";
 import { useToast } from "./hooks/useToast";
 import { useWindowFileDrop } from "./hooks/useWindowFileDrop";
 import { ImageViewport, type ViewportHandle } from "./ImageViewport";
+import { LayerSettings } from "./LayerSettings";
+import { LayersPanel } from "./LayersPanel";
+import { MaskOverlay } from "./MaskOverlay";
 import { PresetsPanel } from "./PresetsPanel";
 import { Toast } from "./Toast";
 
@@ -42,31 +62,49 @@ export function Editor() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast, notify } = useToast();
 
-  // The edit itself (adjustments, active preset, crop, crop ratio) lives in an
-  // undo/redo history; every change goes through `apply`. The crop is its own
-  // field, apart from `adjustments`, on purpose: a preset replaces the
-  // adjustments wholesale and must not throw away a crop. (The nav's Reset
-  // clears both explicitly.)
+  // The edit itself (adjustments, active preset, crop, crop ratio, layers)
+  // lives in an undo/redo history; every change goes through `apply`. The crop
+  // and the layers are fields of their own, apart from `adjustments`, on
+  // purpose: a preset replaces the adjustments wholesale and must not throw
+  // away a crop or a layer. (The nav's Reset clears all of them explicitly.)
   const { edit, apply, restart, undo, redo } = useEditHistory(() => ({
     adjustments: createDefaultAdjustments(),
     activePresetId: null,
     crop: null, // in pixels of the working image; null = the whole image
     aspect: FREE_ASPECT,
+    layers: [],
   }));
-  const { adjustments, activePresetId, crop, aspect } = edit;
+  const { adjustments, activePresetId, crop, aspect, layers } = edit;
   const [importedPresets, persistPresets] = useImportedPresets();
   const [compare, setCompare] = useState(false);
   const [cropping, setCropping] = useState(false);
   /** The crop as it was when cropping started, for Cancel / Escape. */
   const cropAtEntry = useRef<CropRect | null>(null);
 
+  // Layer UI state. Not part of the edit: undo never changes what you're
+  // looking at. If an undo removes the selected layer, the panel goes back to
+  // the global adjustments (and a redo brings the layer back selected).
+  const [selectedLayerId, setSelectedLayerId] = useState<string | null>(null);
+  const [showMask, setShowMask] = useState(false);
+  const [brushMode, setBrushMode] = useState<BrushMode>("off");
+  const [brush, setBrush] = useState<BrushSettings>(DEFAULT_BRUSH);
+  const [picking, setPicking] = useState(false);
+  /** The stroke being painted: drawn, but not in the history until the pointer lifts. */
+  const [pendingStroke, setPendingStroke] = useState<BrushStroke | null>(null);
+  const selectedIndex = layers.findIndex((l) => l.id === selectedLayerId);
+  const selectedLayer = selectedIndex >= 0 ? layers[selectedIndex] : null;
+
   // ----- opening files -----
   const onImageLoaded = useCallback(() => {
     // The adjustments carry over to the new photo, but a crop is in pixels of
     // the photo it was made on, so it doesn't. Undo history starts over too:
     // its earlier steps hold crops that belong to the previous photo.
-    restart((prev) => ({ ...prev, crop: null, aspect: FREE_ASPECT }));
+    // Layers go too: their masks were drawn on the previous photo.
+    restart((prev) => ({ ...prev, crop: null, aspect: FREE_ASPECT, layers: [] }));
     setCropping(false);
+    setSelectedLayerId(null);
+    setPendingStroke(null);
+    setPicking(false);
   }, [restart]);
   const { image, loading, openImage } = useImageLoader({
     viewportRef,
@@ -125,7 +163,7 @@ export function Editor() {
   );
   const dragging = useWindowFileDrop(handleFiles);
 
-  const exporter = useExport({ viewportRef, image, adjustments, crop, notify });
+  const exporter = useExport({ viewportRef, image, adjustments, layers, crop, notify });
 
   // ----- adjustments -----
   const patchAdjustments = (patch: Partial<Adjustments>, key?: string) =>
@@ -143,15 +181,17 @@ export function Editor() {
     );
   /** A section's Reset: a discrete action, so no key and an undo step of its own. */
   const resetAdjustments = (patch: Partial<Adjustments>) => patchAdjustments(patch);
-  /** The nav's Reset: back to the photo as it was opened, crop included. */
+  /** The nav's Reset: back to the photo as it was opened, crop and layers included. */
   const resetAll = () => {
     apply(() => ({
       adjustments: createDefaultAdjustments(),
       activePresetId: null,
       crop: null,
       aspect: FREE_ASPECT,
+      layers: [],
     }));
     setCropping(false);
+    selectLayer(null);
   };
   const applyPresetToImage = (preset: Preset) => {
     // Presets are applied on a clean slate rather than stacked on current edits.
@@ -174,6 +214,7 @@ export function Editor() {
     if (!image || cropping) return;
     cropAtEntry.current = crop;
     setCropping(true);
+    selectLayer(null);
   };
   const cancelCrop = () => {
     const entry = cropAtEntry.current; // read here: `apply` callbacks must not touch refs
@@ -204,17 +245,87 @@ export function Editor() {
     });
   };
 
+  // ----- layers -----
+  /** Select a layer (null: back to the global adjustments), with the tool that suits it. */
+  function selectLayer(id: string | null) {
+    const layer = id === null ? null : layers.find((l) => l.id === id);
+    setSelectedLayerId(layer ? layer.id : null);
+    setBrushMode(layer?.mask.type === "brush" ? "paint" : "off");
+    setPicking(false);
+    setPendingStroke(null);
+    if (layer) setCropping(false);
+  }
+  const updateLayer = (id: string, update: (layer: Layer) => Layer, key?: string) =>
+    apply(
+      (prev) => ({ ...prev, layers: prev.layers.map((l) => (l.id === id ? update(l) : l)) }),
+      key,
+    );
+  const addLayer = (kind: LayerKind) => {
+    if (!image || layers.length >= MAX_LAYERS) return;
+    const layer = createLayer(kind, {
+      id: newLayerId(),
+      name: nextLayerName(kind, layers),
+      // Placed on what's in view: the crop, or the whole photo.
+      view: crop ?? fullRect(image.width, image.height),
+      imageWidth: image.width,
+      imageHeight: image.height,
+    });
+    apply((prev) =>
+      prev.layers.length >= MAX_LAYERS ? prev : { ...prev, layers: [...prev.layers, layer] },
+    );
+    setSelectedLayerId(layer.id);
+    setBrushMode(kind === "brush" ? "paint" : "off");
+    setPicking(kind === "color");
+    setPendingStroke(null);
+    setCropping(false);
+  };
+  const deleteLayer = (id: string) => {
+    apply((prev) => ({ ...prev, layers: prev.layers.filter((l) => l.id !== id) }));
+    if (id === selectedLayerId) selectLayer(null);
+  };
+  const commitStroke = (stroke: BrushStroke) => {
+    // The same stroke object that was being drawn, so nothing is drawn twice.
+    if (selectedLayer) {
+      updateLayer(selectedLayer.id, (l) => ({ ...l, strokes: [...l.strokes, stroke] }));
+    }
+    setPendingStroke(null);
+  };
+  const pickColor = ([u, v]: UV) => {
+    if (!image || !selectedLayer) return;
+    const rgb = sampleColor(image.bitmap, u * image.width, v * image.height);
+    const hue = rgb && pickedHue(...rgb);
+    if (hue === null || hue === undefined) {
+      notify("That spot has almost no color. Pick a more colorful one.", "info");
+      return;
+    }
+    updateLayer(selectedLayer.id, (l) => (l.color ? { ...l, color: { ...l.color, hue } } : l));
+    setPicking(false);
+  };
+  /** Layers as drawn: the stroke being painted is shown on its layer before it's kept. */
+  const shownLayers = useMemo(() => {
+    if (!pendingStroke || !selectedLayerId) return layers;
+    return layers.map((l) =>
+      l.id === selectedLayerId ? { ...l, strokes: [...l.strokes, pendingStroke] } : l,
+    );
+  }, [layers, pendingStroke, selectedLayerId]);
+
   useEditorShortcuts({
     cropping,
+    layerSelected: selectedLayer !== null,
+    brushActive: selectedLayer !== null && brushMode !== "off",
     onToggleCompare: () => setCompare((c) => !c),
     onUndo: undo,
     onRedo: redo,
     onFinishCrop: () => setCropping(false),
     onCancelCrop: cancelCrop,
+    onEscapeLayer: () => (picking ? setPicking(false) : selectLayer(null)),
+    onDeleteLayer: () => selectedLayer && deleteLayer(selectedLayer.id),
+    onToggleMask: () => setShowMask((v) => !v),
+    onBrushSize: (up) => setBrush((b) => ({ ...b, size: stepBrushSize(b.size, up) })),
   });
 
-  // Anything the nav's Reset would undo: a changed slider or a crop.
-  const edited = !isDefault(adjustments) || crop !== null;
+  // Anything the nav's Reset would undo: a changed slider, a crop or a layer.
+  const edited = !isDefault(adjustments) || crop !== null || layers.length > 0;
   /** What an export would save at full size: the crop, or the whole photo. */
   const area = image ? (crop ?? fullRect(image.width, image.height)) : null;
   const rawDetails = image?.raw ? formatRawMetadata(image.raw.metadata) : "";
@@ -300,12 +411,37 @@ export function Editor() {
             ref={viewportRef}
             image={image}
             adjustments={adjustments}
+            layers={shownLayers}
+            showMask={showMask ? selectedIndex : -1}
             compare={compare}
             crop={crop}
             cropping={cropping}
             cropRatio={cropRatio}
             onCropChange={changeCrop}
             onError={notify}
+            overlay={
+              image &&
+              selectedLayer && (
+                <MaskOverlay
+                  imageWidth={image.width}
+                  imageHeight={image.height}
+                  view={crop ?? fullRect(image.width, image.height)}
+                  layer={selectedLayer}
+                  brush={brushMode === "off" ? null : { ...brush, erase: brushMode === "erase" }}
+                  picking={picking}
+                  onMaskChange={(mask, gesture) =>
+                    updateLayer(
+                      selectedLayer.id,
+                      (l) => ({ ...l, mask }),
+                      `layer:${selectedLayer.id}:mask:${gesture}`,
+                    )
+                  }
+                  onStrokeChange={setPendingStroke}
+                  onStrokeEnd={commitStroke}
+                  onPick={pickColor}
+                />
+              )
+            }
           >
             {!image && !loading && (
               <DropZone active={dragging} onBrowse={() => fileInputRef.current?.click()} />
@@ -327,7 +463,7 @@ export function Editor() {
             {image && dragging && !loading && (
               <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-sky-500/10 backdrop-blur-[1px]">
                 <div className="rounded-xl border-2 border-dashed border-sky-400 bg-zinc-950/80 px-6 py-4 text-sm text-sky-200">
-                  Drop to replace the photo (edits are kept)
+                  Drop to replace the photo (adjustments are kept)
                 </div>
               </div>
             )}
@@ -357,12 +493,50 @@ export function Editor() {
             onReset={resetCrop}
             onAspectChange={chooseAspect}
           />
-          <AdjustmentsPanel
-            adjustments={adjustments}
-            onChange={updateAdjustments}
-            onReset={resetAdjustments}
+          <LayersPanel
+            layers={layers}
+            selectedId={selectedLayer?.id ?? null}
             disabled={!image}
+            onAdd={addLayer}
+            onSelect={(id) => selectLayer(id === selectedLayerId ? null : id)}
+            onToggleVisible={(id) => updateLayer(id, (l) => ({ ...l, visible: !l.visible }))}
+            onDelete={deleteLayer}
+            onDeleteAll={() => {
+              apply((prev) => ({ ...prev, layers: [] }));
+              selectLayer(null);
+            }}
           />
+          {selectedLayer ? (
+            <LayerSettings
+              key={selectedLayer.id}
+              layer={selectedLayer}
+              disabled={!image}
+              onUpdate={(update, key) => updateLayer(selectedLayer.id, update, key)}
+              onDone={() => selectLayer(null)}
+              onDelete={() => deleteLayer(selectedLayer.id)}
+              showMask={showMask}
+              onShowMaskChange={setShowMask}
+              brushMode={brushMode}
+              onBrushModeChange={(mode) => {
+                setBrushMode(mode);
+                if (mode !== "off") setPicking(false);
+              }}
+              brush={brush}
+              onBrushChange={(patch) => setBrush((b) => ({ ...b, ...patch }))}
+              picking={picking}
+              onPickingChange={(on) => {
+                setPicking(on);
+                if (on) setBrushMode("off");
+              }}
+            />
+          ) : (
+            <AdjustmentsPanel
+              adjustments={adjustments}
+              onChange={updateAdjustments}
+              onReset={resetAdjustments}
+              disabled={!image}
+            />
+          )}
           <div className="px-4 py-3 text-[11px] leading-relaxed text-zinc-600">
             Double-click any slider to reset it.{" "}
             {/* The compare control differs by layout: a hold button on wide screens,

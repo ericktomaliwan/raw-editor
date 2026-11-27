@@ -2,7 +2,17 @@ import { type Adjustments, HSL_CHANNELS } from "../adjustments";
 import { calibrationMatrix } from "../calibration";
 import type { CropRect } from "../crop";
 import { buildCurveTexture, hasPointCurve, LUT_SIZE } from "../curve";
+import { type Layer, packLayerUniforms } from "../layers";
+import { BrushMasks } from "./brushMasks";
+import { createProgram } from "./program";
 import { FRAGMENT_SHADER, VERTEX_SHADER } from "./shaders";
+
+/** Everything a render needs to know about the edit. */
+export interface RenderEdit {
+  adjustments: Adjustments;
+  /** Local adjustments; layer i uses shader slot i. */
+  layers: readonly Layer[];
+}
 
 export interface RenderOptions {
   /** Output size in device pixels. Defaults to the canvas' current size. */
@@ -21,12 +31,14 @@ export interface RenderOptions {
    * the vignette use this. Defaults to `view`.
    */
   crop?: CropRect;
+  /** Index of the layer whose mask is tinted red on top of the picture. */
+  showMask?: number;
 }
 
 /**
- * Thin WebGL2 wrapper: one source texture, one curve LUT texture, one
- * full-screen program. All adjustments are uniforms, so re-rendering is a
- * single draw call.
+ * Thin WebGL2 wrapper: one source texture, one curve LUT texture, the painted
+ * layer masks, one full-screen program. All adjustments are uniforms, so
+ * re-rendering is a single draw call (plus drawing any new brush dabs).
  */
 export class Renderer {
   readonly gl: WebGL2RenderingContext;
@@ -37,9 +49,16 @@ export class Renderer {
   private vao: WebGLVertexArrayObject;
   private imageTex: WebGLTexture | null = null;
   private curveTex: WebGLTexture;
+  private brush: BrushMasks;
   private uniforms = new Map<string, WebGLUniformLocation | null>();
+  /** Size of the texture being rendered (the photo, or an export's stand-in). */
   private imageWidth = 0;
   private imageHeight = 0;
+  /** Size of the photo itself, which layer geometry is relative to. */
+  private photoWidth = 0;
+  private photoHeight = 0;
+  /** The part of the photo the texture shows, in photo pixels; null = all of it. */
+  private sourceRegion: CropRect | null = null;
   private curveKey = "";
 
   constructor(canvas: HTMLCanvasElement) {
@@ -53,7 +72,7 @@ export class Renderer {
     this.canvas = canvas;
     this.maxTextureSize = gl.getParameter(gl.MAX_TEXTURE_SIZE) as number;
 
-    this.program = this.createProgram(VERTEX_SHADER, FRAGMENT_SHADER);
+    this.program = createProgram(gl, VERTEX_SHADER, FRAGMENT_SHADER);
     const vao = gl.createVertexArray();
     if (!vao) throw new Error("Failed to create VAO");
     this.vao = vao;
@@ -67,9 +86,13 @@ export class Renderer {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
 
+    this.brush = new BrushMasks(gl);
+
     gl.useProgram(this.program);
     gl.uniform1i(this.loc("u_image"), 0);
     gl.uniform1i(this.loc("u_curve"), 1);
+    // Its own unit: samplers of different types may not share one.
+    gl.uniform1i(this.loc("u_brush"), 2);
   }
 
   get hasImage() {
@@ -83,8 +106,9 @@ export class Renderer {
   setImage(source: ImageBitmap | HTMLImageElement | HTMLCanvasElement) {
     if (this.imageTex) this.gl.deleteTexture(this.imageTex);
     this.imageTex = this.uploadImage(source);
-    this.imageWidth = source.width;
-    this.imageHeight = source.height;
+    this.imageWidth = this.photoWidth = source.width;
+    this.imageHeight = this.photoHeight = source.height;
+    this.brush.setImageSize(source.width, source.height);
   }
 
   /**
@@ -92,27 +116,38 @@ export class Renderer {
    * for the image, then put the image back. For exports at a reduced size: the
    * source is resampled to the output size first, and rendering it 1:1 keeps
    * every output-relative effect (sharpen, presence, grain) at the scale the
-   * preview shows. Synchronous, so no display render can happen in between.
+   * preview shows. `region` is the part of the photo the pixels show, in photo
+   * pixels, so layer masks stay where they were drawn. Synchronous, so no
+   * display render can happen in between.
    */
-  withSource<T>(pixels: { data: Uint8Array; width: number; height: number }, fn: () => T): T {
+  withSource<T>(
+    pixels: { data: Uint8Array; width: number; height: number },
+    region: CropRect,
+    fn: () => T,
+  ): T {
     const saved = { tex: this.imageTex, width: this.imageWidth, height: this.imageHeight };
     const tex = this.uploadImage(pixels);
     this.imageTex = tex;
     this.imageWidth = pixels.width;
     this.imageHeight = pixels.height;
+    this.sourceRegion = region;
     try {
       return fn();
     } finally {
       this.imageTex = saved.tex;
       this.imageWidth = saved.width;
       this.imageHeight = saved.height;
+      this.sourceRegion = null;
       this.gl.deleteTexture(tex);
     }
   }
 
-  render(adj: Adjustments, opts: RenderOptions = {}) {
+  render(edit: RenderEdit, opts: RenderOptions = {}) {
     const gl = this.gl;
     if (!this.imageTex) return;
+    const adj = edit.adjustments;
+    // Before anything else: drawing new brush dabs uses its own framebuffer.
+    if (!opts.bypass) this.brush.sync(edit.layers);
 
     const width = opts.width ?? this.canvas.width;
     const height = opts.height ?? this.canvas.height;
@@ -127,6 +162,8 @@ export class Renderer {
 
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, this.imageTex);
+    gl.activeTexture(gl.TEXTURE2);
+    gl.bindTexture(gl.TEXTURE_2D_ARRAY, this.brush.texture);
     gl.activeTexture(gl.TEXTURE1);
     gl.bindTexture(gl.TEXTURE_2D, this.curveTex);
     this.uploadCurveIfChanged(adj);
@@ -134,6 +171,7 @@ export class Renderer {
     const whole: CropRect = { x: 0, y: 0, width: this.imageWidth, height: this.imageHeight };
     const view = opts.view ?? whole;
     this.setUniforms(adj, opts.bypass ?? false, width, height, view, opts.crop ?? view);
+    this.setLayerUniforms(edit.layers, opts.showMask ?? -1);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
   }
 
@@ -160,6 +198,7 @@ export class Renderer {
     const gl = this.gl;
     if (this.imageTex) gl.deleteTexture(this.imageTex);
     gl.deleteTexture(this.curveTex);
+    this.brush.dispose();
     gl.deleteProgram(this.program);
     gl.deleteVertexArray(this.vao);
     // Deliberately not calling WEBGL_lose_context here: a canvas only ever
@@ -316,43 +355,31 @@ export class Renderer {
     f("u_grayscale", a.grayscale ? 1 : 0);
   }
 
+  private setLayerUniforms(layers: readonly Layer[], showMask: number) {
+    const gl = this.gl;
+    const pw = this.photoWidth;
+    const ph = this.photoHeight;
+    const u = packLayerUniforms(layers, pw, ph);
+    gl.uniform1i(this.loc("u_layerCount"), u.count);
+    gl.uniform4fv(this.loc("u_maskA"), u.maskA);
+    gl.uniform4fv(this.loc("u_maskB"), u.maskB);
+    gl.uniform4fv(this.loc("u_rangeL"), u.rangeL);
+    gl.uniform4fv(this.loc("u_rangeC"), u.rangeC);
+    gl.uniform4fv(this.loc("u_localA"), u.localA);
+    gl.uniform4fv(this.loc("u_localB"), u.localB);
+    gl.uniform4fv(this.loc("u_localC"), u.localC);
+    gl.uniform4fv(this.loc("u_localD"), u.localD);
+    const long = Math.max(pw, ph, 1);
+    gl.uniform2f(this.loc("u_isoScale"), pw / long, ph / long);
+    const r = this.sourceRegion ?? { x: 0, y: 0, width: pw, height: ph };
+    gl.uniform4f(this.loc("u_imageFrame"), r.x / pw, r.y / ph, r.width / pw, r.height / ph);
+    gl.uniform1i(this.loc("u_showMask"), showMask < u.count ? showMask : -1);
+  }
+
   private loc(name: string) {
     if (!this.uniforms.has(name)) {
       this.uniforms.set(name, this.gl.getUniformLocation(this.program, name));
     }
     return this.uniforms.get(name) ?? null;
-  }
-
-  private createProgram(vsSrc: string, fsSrc: string): WebGLProgram {
-    const gl = this.gl;
-    const vs = this.compile(gl.VERTEX_SHADER, vsSrc);
-    const fs = this.compile(gl.FRAGMENT_SHADER, fsSrc);
-    const program = gl.createProgram();
-    if (!program) throw new Error("Failed to create program");
-    gl.attachShader(program, vs);
-    gl.attachShader(program, fs);
-    gl.linkProgram(program);
-    gl.deleteShader(vs);
-    gl.deleteShader(fs);
-    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-      const log = gl.getProgramInfoLog(program);
-      gl.deleteProgram(program);
-      throw new Error(`Program link failed: ${log}`);
-    }
-    return program;
-  }
-
-  private compile(type: number, src: string): WebGLShader {
-    const gl = this.gl;
-    const shader = gl.createShader(type);
-    if (!shader) throw new Error("Failed to create shader");
-    gl.shaderSource(shader, src);
-    gl.compileShader(shader);
-    if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-      const log = gl.getShaderInfoLog(shader);
-      gl.deleteShader(shader);
-      throw new Error(`Shader compile failed: ${log}`);
-    }
-    return shader;
   }
 }
