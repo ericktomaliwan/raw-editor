@@ -48,6 +48,7 @@ import { HeaderActions } from "./HeaderActions";
 import { useEditorShortcuts } from "./hooks/useEditorShortcuts";
 import { useExport } from "./hooks/useExport";
 import { useImageLoader } from "./hooks/useImageLoader";
+import { useMediaQuery } from "./hooks/useMediaQuery";
 import { useToast } from "./hooks/useToast";
 import { useWindowFileDrop } from "./hooks/useWindowFileDrop";
 import { ImageViewport, type ViewportHandle } from "./ImageViewport";
@@ -324,6 +325,61 @@ export function Editor() {
     onBrushSize: (up) => setBrush((b) => ({ ...b, size: stepBrushSize(b.size, up) })),
   });
 
+  // Wide screens get a third column, on the left, for everything about layers,
+  // and the right sidebar keeps the global adjustments. Narrower screens have
+  // one sidebar, where a selected layer's settings stand in for the global
+  // adjustments until it's deselected. (Three columns need about 1280px for
+  // the photo to keep a useful size.)
+  const wide = useMediaQuery("(min-width: 80rem)");
+  const layersPanel = (
+    <LayersPanel
+      layers={layers}
+      selectedId={selectedLayer?.id ?? null}
+      disabled={!image}
+      collapsible={!wide}
+      onAdd={addLayer}
+      onSelect={(id) => selectLayer(id === selectedLayerId ? null : id)}
+      onToggleVisible={(id) => updateLayer(id, (l) => ({ ...l, visible: !l.visible }))}
+      onDelete={deleteLayer}
+      onDeleteAll={() => {
+        apply((prev) => ({ ...prev, layers: [] }));
+        selectLayer(null);
+      }}
+    />
+  );
+  const layerSettings = selectedLayer && (
+    <LayerSettings
+      key={selectedLayer.id}
+      layer={selectedLayer}
+      disabled={!image}
+      onUpdate={(update, key) => updateLayer(selectedLayer.id, update, key)}
+      onDone={() => selectLayer(null)}
+      onDelete={() => deleteLayer(selectedLayer.id)}
+      showMask={showMask}
+      onShowMaskChange={setShowMask}
+      brushMode={brushMode}
+      onBrushModeChange={(mode) => {
+        setBrushMode(mode);
+        if (mode !== "off") setPicking(false);
+      }}
+      brush={brush}
+      onBrushChange={(patch) => setBrush((b) => ({ ...b, ...patch }))}
+      picking={picking}
+      onPickingChange={(on) => {
+        setPicking(on);
+        if (on) setBrushMode("off");
+      }}
+    />
+  );
+  const adjustmentsPanel = (
+    <AdjustmentsPanel
+      adjustments={adjustments}
+      onChange={updateAdjustments}
+      onReset={resetAdjustments}
+      disabled={!image}
+    />
+  );
+
   // Anything the nav's Reset would undo: a changed slider, a crop or a layer.
   const edited = !isDefault(adjustments) || crop !== null || layers.length > 0;
   /** What an export would save at full size: the crop, or the whole photo. */
@@ -404,7 +460,27 @@ export function Editor() {
       </header>
 
       {/* Workspace */}
-      <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[minmax(0,1fr)_340px]">
+      <div
+        className={`grid min-h-0 flex-1 ${
+          wide
+            ? "grid-cols-[288px_minmax(0,1fr)_340px]"
+            : "grid-cols-1 lg:grid-cols-[minmax(0,1fr)_340px]"
+        }`}
+      >
+        {wide && (
+          <aside
+            className="min-h-0 overflow-y-auto border-r border-zinc-800 bg-zinc-950"
+            aria-label="Layers"
+          >
+            {layersPanel}
+            {layerSettings ??
+              (layers.length > 0 && (
+                <p className="px-4 py-3 text-[11px] leading-relaxed text-zinc-500">
+                  Select a layer to move its mask and change its settings.
+                </p>
+              ))}
+          </aside>
+        )}
         <main className="relative min-h-[50vh] bg-[#111113] p-6 lg:min-h-0">
           <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(255,255,255,0.03),transparent_70%)]" />
           <ImageViewport
@@ -493,49 +569,13 @@ export function Editor() {
             onReset={resetCrop}
             onAspectChange={chooseAspect}
           />
-          <LayersPanel
-            layers={layers}
-            selectedId={selectedLayer?.id ?? null}
-            disabled={!image}
-            onAdd={addLayer}
-            onSelect={(id) => selectLayer(id === selectedLayerId ? null : id)}
-            onToggleVisible={(id) => updateLayer(id, (l) => ({ ...l, visible: !l.visible }))}
-            onDelete={deleteLayer}
-            onDeleteAll={() => {
-              apply((prev) => ({ ...prev, layers: [] }));
-              selectLayer(null);
-            }}
-          />
-          {selectedLayer ? (
-            <LayerSettings
-              key={selectedLayer.id}
-              layer={selectedLayer}
-              disabled={!image}
-              onUpdate={(update, key) => updateLayer(selectedLayer.id, update, key)}
-              onDone={() => selectLayer(null)}
-              onDelete={() => deleteLayer(selectedLayer.id)}
-              showMask={showMask}
-              onShowMaskChange={setShowMask}
-              brushMode={brushMode}
-              onBrushModeChange={(mode) => {
-                setBrushMode(mode);
-                if (mode !== "off") setPicking(false);
-              }}
-              brush={brush}
-              onBrushChange={(patch) => setBrush((b) => ({ ...b, ...patch }))}
-              picking={picking}
-              onPickingChange={(on) => {
-                setPicking(on);
-                if (on) setBrushMode("off");
-              }}
-            />
+          {wide ? (
+            adjustmentsPanel
           ) : (
-            <AdjustmentsPanel
-              adjustments={adjustments}
-              onChange={updateAdjustments}
-              onReset={resetAdjustments}
-              disabled={!image}
-            />
+            <>
+              {layersPanel}
+              {layerSettings || adjustmentsPanel}
+            </>
           )}
           <div className="px-4 py-3 text-[11px] leading-relaxed text-zinc-600">
             Double-click any slider to reset it.{" "}

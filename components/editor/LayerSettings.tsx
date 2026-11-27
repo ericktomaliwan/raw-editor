@@ -110,7 +110,7 @@ export function LayerSettings({
           type="button"
           onClick={onDone}
           className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100"
-          title="Back to the whole-photo adjustments (Esc)"
+          title="Finish editing this layer (Esc)"
         >
           <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden>
             <path d="M7 1L3 5l4 4" fill="none" stroke="currentColor" strokeWidth="1.5" />

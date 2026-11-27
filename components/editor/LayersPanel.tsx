@@ -13,6 +13,8 @@ interface Props {
   onDelete: (id: string) => void;
   /** The section's Reset: remove every layer. */
   onDeleteAll: () => void;
+  /** False when the panel is a column of its own, where folding it away makes no sense. */
+  collapsible?: boolean;
 }
 
 /** The list of layers (local adjustments) and the buttons that add one. */
@@ -25,10 +27,16 @@ export function LayersPanel({
   onToggleVisible,
   onDelete,
   onDeleteAll,
+  collapsible = true,
 }: Props) {
   const full = layers.length >= MAX_LAYERS;
   return (
-    <Section title="Layers" modified={layers.length > 0} onReset={onDeleteAll}>
+    <Section
+      title="Layers"
+      modified={layers.length > 0}
+      onReset={onDeleteAll}
+      collapsible={collapsible}
+    >
       {layers.length === 0 ? (
         <p className="text-[11px] leading-relaxed text-zinc-500">
           Adjust part of the photo: add a gradient, paint with a brush, or pick out a range of tones
