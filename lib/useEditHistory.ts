@@ -1,6 +1,7 @@
 import { useCallback, useReducer } from "react";
 import type { Adjustments } from "./adjustments";
 import type { AspectChoice, CropRect } from "./crop";
+import type { Layer } from "./layers";
 
 /**
  * Everything about an edit that undo/redo steps through. UI state that isn't
@@ -15,9 +16,15 @@ export interface EditState {
   /** Crop in image pixels; null = whole image. */
   crop: CropRect | null;
   aspect: AspectChoice;
+  /** Local adjustments, in shader slot order. */
+  layers: Layer[];
 }
 
-/** How many steps back you can go. Snapshots are small (about 1 KB each). */
+/**
+ * How many steps back you can go. Snapshots share everything that didn't
+ * change (brush strokes most of all), so each step costs little more than the
+ * settings it changed.
+ */
 export const LIMIT = 100;
 
 /**
@@ -43,7 +50,34 @@ export type HistoryAction =
   | { type: "undo" }
   | { type: "redo" };
 
-const same = (a: EditState, b: EditState) => a === b || JSON.stringify(a) === JSON.stringify(b);
+/**
+ * Deep equality for plain data (objects, arrays, primitives). Parts that are
+ * the same object are equal without being walked, which keeps comparing two
+ * snapshots cheap: an edit copies only what it changes, so long brush strokes
+ * are usually the same arrays in both.
+ */
+export function sameValue(a: unknown, b: unknown): boolean {
+  if (Object.is(a, b)) return true;
+  if (typeof a !== "object" || typeof b !== "object" || a === null || b === null) return false;
+  if (Array.isArray(a) !== Array.isArray(b)) return false;
+  if (Array.isArray(a)) {
+    const bb = b as unknown[];
+    if (a.length !== bb.length) return false;
+    for (let i = 0; i < a.length; i++) if (!sameValue(a[i], bb[i])) return false;
+    return true;
+  }
+  const ka = Object.keys(a);
+  if (ka.length !== Object.keys(b).length) return false;
+  for (const k of ka) {
+    if (!Object.hasOwn(b, k)) return false;
+    if (!sameValue((a as Record<string, unknown>)[k], (b as Record<string, unknown>)[k])) {
+      return false;
+    }
+  }
+  return true;
+}
+
+const same = (a: EditState, b: EditState) => sameValue(a, b);
 
 /** Exported for tests; components use the hook below. */
 export function historyReducer(h: History, action: HistoryAction): History {

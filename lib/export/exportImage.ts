@@ -3,6 +3,7 @@ import type { CropRect } from "../crop";
 import type { ExportFormat } from "../exportFormat";
 import { exportDimensions, type ExportSize } from "../exportSize";
 import { encodeJpeg } from "../jpeg/encoder";
+import type { Layer } from "../layers";
 import { encodePng } from "../png/encoder";
 import { resizePixels } from "../resize/resizer";
 import { encodeWebp, WEBP_MAX_DIMENSION } from "../webp/encoder";
@@ -11,6 +12,7 @@ import type { RawPixels } from "../workers/pixelWorker";
 
 export interface ExportRequest {
   adjustments: Adjustments;
+  layers: readonly Layer[];
   /** The part of the image to export, in image pixels (the whole image when uncropped). */
   crop: CropRect;
   format: ExportFormat;
@@ -61,7 +63,8 @@ export async function exportImage(
   request: ExportRequest,
   redrawDisplay: () => void,
 ): Promise<ExportResult> {
-  const { adjustments, crop, format, quality, longEdge } = request;
+  const { adjustments, layers, crop, format, quality, longEdge } = request;
+  const edit = { adjustments, layers };
   const size = exportDimensions(crop.width, crop.height, longEdge);
   const resizing = size.width !== crop.width || size.height !== crop.height;
   if (
@@ -90,7 +93,7 @@ export async function exportImage(
   let resizeMs = 0;
   if (resizing) {
     const started = performance.now();
-    renderer.render(adjustments, {
+    renderer.render(edit, {
       width: crop.width,
       height: crop.height,
       view: crop,
@@ -113,14 +116,15 @@ export async function exportImage(
   /** Render the export picture into the canvas, then run `then` before anything redraws it. */
   const drawExport = <T>(then: () => T): T => {
     if (source) {
-      return renderer.withSource(source, () => {
-        renderer.render(adjustments, size);
+      // The resampled pixels are the crop, so the layers are told where it sits.
+      return renderer.withSource(source, crop, () => {
+        renderer.render(edit, size);
         return then();
       });
     }
     // Without a resampled source the GPU scales the crop itself, as for the
     // preview: softer, but the same picture.
-    renderer.render(adjustments, { ...size, view: crop, crop });
+    renderer.render(edit, { ...size, view: crop, crop });
     return then();
   };
 

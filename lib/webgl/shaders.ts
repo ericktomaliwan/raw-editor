@@ -52,7 +52,35 @@ uniform float u_colorNoise, u_colorNoiseDetail, u_colorNoiseSmooth; // 0..1
 uniform float u_vignetteMidpoint, u_vignetteFeather; // 0..1
 uniform float u_vignetteRoundness;                   // -1..1
 
+// Layers (local adjustments). Slot i holds layer i; see packLayerUniforms() in
+// lib/layers.ts for what each vec4 carries.
+const int MAX_LAYERS = 8;
+uniform int  u_layerCount;
+uniform vec4 u_maskA[MAX_LAYERS];  // geometry, in long-edge units
+uniform vec4 u_maskB[MAX_LAYERS];  // (type, angle, feather, invert)
+uniform vec4 u_rangeL[MAX_LAYERS]; // luminance range (lo, hi, feather, on)
+uniform vec4 u_rangeC[MAX_LAYERS]; // colour range (hue, width, on), has brush strokes
+uniform vec4 u_localA[MAX_LAYERS]; // temperature, tint, exposure, contrast
+uniform vec4 u_localB[MAX_LAYERS]; // highlights, shadows, whites, blacks
+uniform vec4 u_localC[MAX_LAYERS]; // texture, clarity, dehaze, saturation
+uniform vec4 u_localD[MAX_LAYERS]; // sharpness, tint hue, tint saturation
+// Painted masks, one slice per slot: r = painted on, g = erased.
+uniform mediump sampler2DArray u_brush;
+// Where this render's uv sits in the whole image: whole-image uv = xy + v_uv * zw.
+// The identity, except for a reduced-size export, which renders only the crop.
+uniform vec4 u_imageFrame;
+uniform vec2 u_isoScale;  // image width and height / long edge
+uniform int  u_showMask;  // slot whose mask is shown in red, or -1
+
 const float PI = 3.14159265359;
+
+// Per-pixel values of the settings layers can change: the global value plus
+// every layer's own, weighted by its mask. Set once at the top of main().
+float p_temperature, p_tint, p_exposure, p_contrast;
+float p_highlights, p_shadows, p_whites, p_blacks;
+float p_texture, p_clarity, p_dehaze, p_saturation, p_sharpness;
+vec3 p_colorTint;
+float p_shownMask; // the mask of slot u_showMask
 
 // ---------- colour helpers ----------
 vec3 srgbToLinear(vec3 c) {
@@ -143,10 +171,98 @@ vec3 colorNoiseReduction(vec3 src) {
   return clamp(l0 + ch, 0.0, 1.0);
 }
 
+// ---------- layers ----------
+
+// Linear gradient: 1 up to the start line, 0 from the end line on.
+float linearMask(vec4 a, vec2 p) {
+  vec2 d = a.zw - a.xy;
+  float t = dot(p - a.xy, d) / max(dot(d, d), 1e-8);
+  return 1.0 - smoothstep(0.0, 1.0, t);
+}
+
+// Radial gradient: 1 inside the ellipse, fading out over the feather to its edge.
+float radialMask(vec4 a, vec4 b, vec2 p) {
+  vec2 q = p - a.xy;
+  float c = cos(b.y), s = sin(b.y);
+  q = vec2(c * q.x + s * q.y, -s * q.x + c * q.y); // into the ellipse's own axes
+  float e = length(q / max(a.zw, vec2(1e-5)));
+  float w = max(b.z, fwidth(e)); // a hard edge is still anti-aliased
+  float m = 1.0 - smoothstep(1.0 - w, 1.0, e);
+  return b.w > 0.5 ? 1.0 - m : m;
+}
+
+// How much layer i applies at this pixel, 0..1 (before its amount, which is
+// already in its settings). src is the original colour, so a range doesn't
+// move when the edit changes the picture.
+float layerMask(int i, vec2 uv, vec3 src) {
+  vec2 p = uv * u_isoScale;
+  vec4 b = u_maskB[i];
+  float m = 1.0; // range-only: the whole image
+  if (b.x == 1.0) m = linearMask(u_maskA[i], p);
+  else if (b.x == 2.0) m = radialMask(u_maskA[i], b, p);
+  else if (b.x == 3.0) m = 0.0; // brush-only: nothing until painted
+  if (u_rangeC[i].w > 0.5) {
+    vec2 painted = textureLod(u_brush, vec3(uv, float(i)), 0.0).rg;
+    m = max(m, painted.r) * (1.0 - painted.g);
+  }
+  vec4 rl = u_rangeL[i];
+  if (rl.w > 0.5) {
+    float l = luma(src);
+    float f = max(rl.z * 0.5, 1e-3);
+    m *= smoothstep(rl.x - f, rl.x, l) * (1.0 - smoothstep(rl.y, rl.y + f, l));
+  }
+  vec4 rc = u_rangeC[i];
+  if (rc.z > 0.5) {
+    vec3 hsv = rgb2hsv(src);
+    float d = hueDist(hsv.x, rc.x);
+    // Greys have no hue to match, so they're left out.
+    m *= (1.0 - smoothstep(rc.y * 0.5, rc.y, d)) * smoothstep(0.04, 0.15, hsv.y);
+  }
+  return clamp(m, 0.0, 1.0);
+}
+
+// Work out the per-pixel settings (p_*) from the global ones and the layers.
+// Sums are clamped to the global slider ranges, so the stage formulas stay in
+// the range they were made for; exposure may go to +-10 EV.
+void applyLayers(vec3 src) {
+  vec4 sA = vec4(0.0), sB = vec4(0.0), sC = vec4(0.0);
+  float sharp = 0.0;
+  vec3 tint = vec3(0.0);
+  p_shownMask = 0.0;
+  vec2 uv = u_imageFrame.xy + v_uv * u_imageFrame.zw;
+  for (int i = 0; i < MAX_LAYERS; i++) {
+    if (i >= u_layerCount) break;
+    float m = layerMask(i, uv, src);
+    if (i == u_showMask) p_shownMask = m;
+    sA += m * u_localA[i];
+    sB += m * u_localB[i];
+    sC += m * u_localC[i];
+    vec4 d = u_localD[i];
+    sharp += m * d.x;
+    if (d.z > 0.0) tint += m * d.z * (hsv2rgb(vec3(d.y, 1.0, 1.0)) - 0.5);
+  }
+  p_temperature = clamp(u_temperature + sA.x, -1.0, 1.0);
+  p_tint = clamp(u_tint + sA.y, -1.0, 1.0);
+  p_exposure = clamp(u_exposure + sA.z, -10.0, 10.0);
+  p_contrast = clamp(u_contrast + sA.w, -1.0, 1.0);
+  p_highlights = clamp(u_highlights + sB.x, -1.0, 1.0);
+  p_shadows = clamp(u_shadows + sB.y, -1.0, 1.0);
+  p_whites = clamp(u_whites + sB.z, -1.0, 1.0);
+  p_blacks = clamp(u_blacks + sB.w, -1.0, 1.0);
+  p_texture = clamp(u_texture + sC.x, -1.0, 1.0);
+  p_clarity = clamp(u_clarity + sC.y, -1.0, 1.0);
+  p_dehaze = clamp(u_dehaze + sC.z, -1.0, 1.0);
+  p_saturation = clamp(u_saturation + sC.w, -1.0, 1.0);
+  p_sharpness = clamp(u_sharpness + sharp, -1.0, 1.5);
+  p_colorTint = tint;
+}
+
+// ---------- stages (continued) ----------
+
 vec3 whiteBalance(vec3 lin) {
   // temperature: + = warmer (more red, less blue); tint: + = magenta, - = green
-  float t = u_temperature * 0.35;
-  float g = u_tint * 0.25;
+  float t = p_temperature * 0.35;
+  float g = p_tint * 0.25;
   vec3 gain = vec3(1.0 + t, 1.0 - g, 1.0 - t);
   gain /= luma(gain); // keep overall brightness stable
   return lin * gain;
@@ -170,27 +286,27 @@ vec3 toneBasic(vec3 c) {
   // Highlights / shadows recovery & lift (masked by luminance)
   float ms = 1.0 - smoothstep(0.0, 0.65, l);
   float mh = smoothstep(0.35, 1.0, l);
-  if (u_shadows != 0.0) {
-    vec3 lifted = pow(max(c, 0.0), vec3(1.0 - 0.6 * u_shadows));
+  if (p_shadows != 0.0) {
+    vec3 lifted = pow(max(c, 0.0), vec3(1.0 - 0.6 * p_shadows));
     c = mix(c, lifted, ms);
   }
-  if (u_highlights != 0.0) {
-    vec3 comp = 1.0 - pow(max(1.0 - c, 0.0), vec3(1.0 + 0.6 * u_highlights));
+  if (p_highlights != 0.0) {
+    vec3 comp = 1.0 - pow(max(1.0 - c, 0.0), vec3(1.0 + 0.6 * p_highlights));
     c = mix(c, comp, mh);
   }
 
   l = luma(c);
   // Whites / blacks: move the end points
-  if (u_whites != 0.0) {
-    c = mix(c, c * (1.0 + 0.35 * u_whites), smoothstep(0.2, 1.0, l));
+  if (p_whites != 0.0) {
+    c = mix(c, c * (1.0 + 0.35 * p_whites), smoothstep(0.2, 1.0, l));
   }
-  if (u_blacks != 0.0) {
-    c = mix(c, c + 0.3 * u_blacks, 1.0 - smoothstep(0.0, 0.55, l));
+  if (p_blacks != 0.0) {
+    c = mix(c, c + 0.3 * p_blacks, 1.0 - smoothstep(0.0, 0.55, l));
   }
 
   // Contrast around middle grey (sigmoid-ish for positive values)
-  if (u_contrast != 0.0) {
-    float k = u_contrast > 0.0 ? 1.0 + u_contrast * 1.2 : 1.0 + u_contrast * 0.7;
+  if (p_contrast != 0.0) {
+    float k = p_contrast > 0.0 ? 1.0 + p_contrast * 1.2 : 1.0 + p_contrast * 0.7;
     c = (c - 0.5) * k + 0.5;
   }
   return c;
@@ -226,28 +342,28 @@ vec3 pointCurve(vec3 c) {
 // Blur levels are relative to u_baseLod so the effect looks the same whether
 // we're drawing a downscaled preview or the full-resolution export.
 vec3 presence(vec3 c, vec3 src) {
-  if (u_texture == 0.0 && u_clarity == 0.0 && u_dehaze == 0.0) return c;
+  if (p_texture == 0.0 && p_clarity == 0.0 && p_dehaze == 0.0) return c;
   float lSrc = luma(src);
   float l = luma(c);
 
-  if (u_texture != 0.0) {
+  if (p_texture != 0.0) {
     float lb = luma(textureLod(u_image, v_uv, u_baseLod + 1.5).rgb);
-    c += (lSrc - lb) * u_texture * 1.5;
+    c += (lSrc - lb) * p_texture * 1.5;
   }
-  if (u_clarity != 0.0) {
+  if (p_clarity != 0.0) {
     float lb = luma(textureLod(u_image, v_uv, u_baseLod + 4.0).rgb);
     float mid = 1.0 - abs(l - 0.5) * 2.0; // emphasise midtones
-    c += (lSrc - lb) * u_clarity * 1.2 * max(mid, 0.2);
+    c += (lSrc - lb) * p_clarity * 1.2 * max(mid, 0.2);
   }
-  if (u_dehaze != 0.0) {
+  if (p_dehaze != 0.0) {
     vec3 blur = textureLod(u_image, v_uv, u_baseLod + 5.0).rgb;
     float haze = min(min(blur.r, blur.g), blur.b);
-    if (u_dehaze > 0.0) {
-      float a = u_dehaze * 0.6 * haze;
+    if (p_dehaze > 0.0) {
+      float a = p_dehaze * 0.6 * haze;
       c = (c - a) / max(1.0 - a, 0.05);
-      c = (c - 0.5) * (1.0 + u_dehaze * 0.3) + 0.5;
+      c = (c - 0.5) * (1.0 + p_dehaze * 0.3) + 0.5;
     } else {
-      c = mix(c, vec3(0.75), -u_dehaze * 0.35);
+      c = mix(c, vec3(0.75), -p_dehaze * 0.35);
     }
   }
   return c;
@@ -308,6 +424,13 @@ vec3 colorGrade(vec3 c) {
   return c + tint * 0.35 * (1.0 - abs(l - 0.5) * 0.8);
 }
 
+// The layers' colour tint: the same soft tint as the Global grading wheel.
+vec3 localTint(vec3 c) {
+  if (p_colorTint == vec3(0.0)) return c;
+  float l = luma(clamp(c, 0.0, 1.0));
+  return c + p_colorTint * 0.35 * (1.0 - abs(l - 0.5) * 0.8);
+}
+
 vec3 saturationVibrance(vec3 c) {
   float l = luma(c);
   if (u_vibrance != 0.0) {
@@ -320,8 +443,8 @@ vec3 saturationVibrance(vec3 c) {
     }
     c = mix(vec3(l), c, 1.0 + amt);
   }
-  if (u_saturation != 0.0) {
-    c = mix(vec3(l), c, 1.0 + u_saturation);
+  if (p_saturation != 0.0) {
+    c = mix(vec3(l), c, 1.0 + p_saturation);
   }
   return c;
 }
@@ -335,8 +458,14 @@ float tapLuma(vec2 offset, float lod) {
 // preview matches the export.
 // At the defaults (radius 1, detail 25, masking 0) this is a plain 3x3 unsharp
 // mask with a small noise floor.
+// Below zero (a layer taking sharpness away past the global amount) it softens
+// instead: the brightness moves towards a blur about four output pixels wide.
 vec3 sharpen(vec3 c, vec3 src) {
-  if (u_sharpness <= 0.0) return c;
+  if (p_sharpness == 0.0) return c;
+  if (p_sharpness < 0.0) {
+    float soft = tapLuma(vec2(0.0), u_baseLod + 2.0);
+    return c + (soft - luma(src)) * -p_sharpness;
+  }
   float radius = u_sharpenRadius;
   vec2 o = u_outTexel * radius;
   // Mip level the output is drawn at. Past one pixel the taps are further apart
@@ -364,7 +493,7 @@ vec3 sharpen(vec3 c, vec3 src) {
   // what draws a halo along a strong edge. At 0 there is no overshoot at all.
   float det = u_sharpenDetail;
   float noiseFloor = det < 0.25 ? mix(0.04, 0.02, det / 0.25) : 0.02 * (1.0 - det) / 0.75;
-  float delta = detail * smoothstep(0.0, max(noiseFloor, 1e-4), abs(detail)) * u_sharpness * 2.5;
+  float delta = detail * smoothstep(0.0, max(noiseFloor, 1e-4), abs(detail)) * p_sharpness * 2.5;
   float holdHalos = 1.0 - min(det / 0.25, 1.0);
   if (holdHalos > 0.0) {
     float lo = min(min(min(lt, lb), min(ll, lr)), min(min(d1, d2), min(d3, d4)));
@@ -449,12 +578,13 @@ void main() {
   if (u_bypass > 0.5) { outColor = vec4(src, texel.a); return; }
 
   src = colorNoiseReduction(src);
+  applyLayers(src);
 
   // Linear-light stages
   vec3 lin = srgbToLinear(src);
   lin = whiteBalance(lin);
   lin = calibrate(lin);
-  lin *= exp2(u_exposure);
+  lin *= exp2(p_exposure);
   vec3 c = linearToSrgb(lin);
 
   // Perceptual stages
@@ -465,6 +595,7 @@ void main() {
   c = hslMixer(c);
   c = saturationVibrance(c);
   c = colorGrade(c);
+  c = localTint(c);
   if (u_grayscale > 0.5) c = vec3(luma(c));
   c = sharpen(c, src);
   c = vignette(c);
@@ -473,6 +604,8 @@ void main() {
   c = fade(c);
   c = grain(c);
 
-  outColor = vec4(clamp(c, 0.0, 1.0), texel.a);
+  c = clamp(c, 0.0, 1.0);
+  if (u_showMask >= 0) c = mix(c, vec3(1.0, 0.15, 0.1), p_shownMask * 0.6);
+  outColor = vec4(c, texel.a);
 }
 `;

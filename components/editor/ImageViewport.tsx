@@ -5,7 +5,8 @@ import type { Adjustments } from "@/lib/adjustments";
 import { type CropRect, fullRect } from "@/lib/crop";
 import { type ExportRequest, type ExportResult, exportImage } from "@/lib/export/exportImage";
 import type { LoadedImage } from "@/lib/image";
-import { Renderer, type RenderOptions } from "@/lib/webgl/renderer";
+import type { Layer } from "@/lib/layers";
+import { type RenderEdit, Renderer, type RenderOptions } from "@/lib/webgl/renderer";
 import { CropOverlay } from "./CropOverlay";
 
 export interface ViewportHandle {
@@ -21,6 +22,10 @@ interface Props {
   ref?: Ref<ViewportHandle>;
   image: LoadedImage | null;
   adjustments: Adjustments;
+  /** Layers as drawn on screen (a stroke being painted included). */
+  layers: readonly Layer[];
+  /** Index of the layer whose mask is shown in red, or -1. */
+  showMask: number;
   compare: boolean;
   /** The crop in image pixels, or null for the whole image. */
   crop: CropRect | null;
@@ -30,6 +35,8 @@ interface Props {
   cropRatio: number | null;
   onCropChange: (rect: CropRect) => void;
   onError: (message: string) => void;
+  /** Drawn exactly over the picture, like the crop box (the selected layer's mask handles). */
+  overlay?: React.ReactNode;
   children?: React.ReactNode; // empty-state overlay
 }
 
@@ -37,19 +44,22 @@ export function ImageViewport({
   ref,
   image,
   adjustments,
+  layers,
+  showMask,
   compare,
   crop,
   cropping,
   cropRatio,
   onCropChange,
   onError,
+  overlay,
   children,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const rendererRef = useRef<Renderer | null>(null);
   /** What the canvas last showed, so an export can put it back. Written by the render effect. */
-  const displayRef = useRef<{ adjustments: Adjustments; options: RenderOptions } | null>(null);
+  const displayRef = useRef<{ edit: RenderEdit; options: RenderOptions } | null>(null);
   const [container, setContainer] = useState({ w: 0, h: 0 });
 
   // Create the WebGL renderer once. Declared before the other effects so it
@@ -111,20 +121,23 @@ export function ImageViewport({
     const r = rendererRef.current;
     if (!r || !image || pixelW === 0 || pixelH === 0) return;
     const display = {
-      adjustments,
+      edit: { adjustments, layers },
       options: {
         width: pixelW,
         height: pixelH,
         bypass: compare,
+        showMask,
         view: { x: viewX, y: viewY, width: viewW, height: viewH },
         crop: { x: cropX, y: cropY, width: cropW, height: cropH },
       },
     };
     displayRef.current = display;
-    const id = requestAnimationFrame(() => r.render(display.adjustments, display.options));
+    const id = requestAnimationFrame(() => r.render(display.edit, display.options));
     return () => cancelAnimationFrame(id);
   }, [
     adjustments,
+    layers,
+    showMask,
     compare,
     image,
     pixelW,
@@ -150,7 +163,7 @@ export function ImageViewport({
         if (!r?.hasImage) return Promise.reject(new Error("No image to export."));
         return exportImage(r, request, () => {
           const display = displayRef.current;
-          if (display) r.render(display.adjustments, display.options);
+          if (display) r.render(display.edit, display.options);
         });
       },
     }),
@@ -177,6 +190,7 @@ export function ImageViewport({
             onChange={onCropChange}
           />
         )}
+        {image && !cropping && !compare && overlay}
       </div>
       {image && compare && (
         <div className="pointer-events-none absolute left-3 top-3 rounded bg-black/70 px-2 py-1 text-[11px] font-medium uppercase tracking-wide text-zinc-200">

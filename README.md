@@ -18,6 +18,7 @@ People who have a few RAW files and want to edit them without installing an app.
 - **Color grading.** Separate tints for shadows, midtones and highlights, plus a global tint.
 - **Calibration.** Shadow tint and per-primary hue and saturation.
 - **Detail and effects.** Sharpening, vignette, fade, grain, and a black-and-white treatment.
+- **Layers.** Local adjustments: up to eight layers, each with its own temperature, tint, exposure, contrast, highlights, shadows, whites, blacks, texture, clarity, dehaze, saturation, sharpness and a color tint. A layer's mask can be a linear gradient, a radial gradient (with feather, rotation and invert), a brush (size, feather and flow), or a luminance or color range picked from the photo. Any mask can be refined by painting to add or erase, and by limiting it to a range of tones or colors. Layers can be hidden, faded with an amount, and their mask shown in red.
 - **Crop.** A draggable crop box with a live pixel-size readout and ratio presets: Free, Original, Square, 5:4, 4:3, 3:2 and 16:9, each in landscape or portrait.
 - **Presets.** One built-in look (High Detail), plus your own: import `.xmp` preset files one at a time or drop a whole folder. Imported presets are stored in your browser.
 - **Undo and redo** for every edit.
@@ -31,6 +32,11 @@ People who have a few RAW files and want to edit them without installing an app.
 | Undo | `Cmd+Z` / `Ctrl+Z` |
 | Redo | `Cmd+Shift+Z` / `Ctrl+Y` / `Ctrl+Shift+Z` |
 | Toggle the original (before/after) | `\` |
+| Back to the whole-photo adjustments | `Esc` (with a layer selected) |
+| Delete the selected layer | `Delete` / `Backspace` |
+| Show or hide the selected layer's mask | `O` |
+| Smaller or larger brush | `[` / `]` |
+| Erase while painting (or paint while erasing) | Hold `Alt` / `Option` |
 | Reset a slider | Double-click it |
 | Finish cropping | `Enter` |
 | Cancel cropping | `Esc` |
@@ -84,10 +90,10 @@ There is one optional environment variable, described in `.env.example`:
 ## How it works
 
 1. **Decode.** A RAW file is handed to LibRaw running in a Web Worker, which demosaics it at full resolution using the white balance the camera recorded and returns a 16-bit sRGB image. A plain decode looks darker than the photo the camera showed, so its brightness is set to match: by the DNG's own baseline exposure when the file has one, otherwise by comparing it with the JPEG preview the camera embedded in the file. That happens before the image is reduced to 8 bits, so lifted shadows stay smooth. If the sensor data can't be decoded, the embedded preview is used and the photo is labeled as a preview. Other formats go straight through the browser's own decoder. Anything larger than the GPU's maximum texture size is scaled down to fit.
-2. **Render.** The image is uploaded once as a WebGL 2 texture. Every adjustment is a uniform on a single fragment shader, so moving a slider is one draw call. White balance, calibration and exposure are applied in linear light; tone, curves, color and effects follow on display-referred values.
+2. **Render.** The image is uploaded once as a WebGL 2 texture. Every adjustment is a uniform on a single fragment shader, so moving a slider is one draw call. White balance, calibration and exposure are applied in linear light; tone, curves, color and effects follow on display-referred values. Layers work inside the same draw: for every pixel the shader works out each layer's mask (gradients are computed on the spot; painting is drawn as soft dabs into a small texture, one slice per layer) and adds each layer's settings, weighted by its mask, to the global ones before any stage runs.
 3. **Export.** The same shader renders the photo (or the cropped area) at full resolution. For a smaller export, the unedited crop is first resampled to the target size with Lanczos3 in a worker and the shader runs on that, so sharpening and grain keep the scale the preview shows. The pixels are read back from the GPU and encoded in a second worker, by MozJPEG, OxiPNG or libwebp, with the browser's built-in encoder as a fallback.
 
-The edit itself (adjustments, active preset and crop) lives in a small undo/redo history, so every change can be stepped back.
+The edit itself (adjustments, active preset, crop and layers) lives in a small undo/redo history, so every change can be stepped back. Brush strokes are kept as points, not pixels, so they cost little in the history.
 
 ## Project layout
 
@@ -104,7 +110,9 @@ components/
   elements/, sections/, icons/   building blocks for the content pages
 lib/
   adjustments.ts      the edit model: fields, defaults, ranges, validation
-  webgl/              renderer and the GLSL pipeline
+  layers.ts           layers (local adjustments): masks, settings, shader packing
+  masks/              gradient handle geometry and brush strokes
+  webgl/              renderer, the GLSL pipeline and the painted layer masks
   raw/                RAW decoding (LibRaw worker client) and brightness matching
   export/             the export pipeline, its time estimate, file naming and download
   exportFormat.ts     the export formats and what differs between them
@@ -136,8 +144,9 @@ Page-view analytics use `@vercel/analytics` and only record anything once Web An
 ## Limitations
 
 - **RAW files start out with less contrast than the camera's view.** They open at the camera's brightness, but without the contrast curve and sharpening a camera or phone adds in its own viewer, so expect a flatter, softer image to begin with.
-- **Presets are interpreted, not replicated.** Tone, color, curve, grading and calibration settings are mapped onto this editor's own pipeline, so results are close but not identical. Lens corrections, local adjustments, camera profiles and noise reduction are ignored.
+- **Presets are interpreted, not replicated.** Tone, color, curve, grading and calibration settings are mapped onto this editor's own pipeline, so results are close but not identical. Lens corrections, a preset's own masks, camera profiles and luminance noise reduction are ignored.
 - **Editing is 8-bit after decoding.** Extreme adjustments can show banding that a full-depth pipeline would avoid.
+- **Layers belong to the photo they were made on.** Opening another photo keeps the global adjustments but removes the layers, as it does the crop. Applying a preset leaves layers alone.
 - **Images larger than your GPU's texture limit are scaled down to fit.** Most desktop browsers and recent iPhones allow 16,384 pixels on a side, more than any current camera produces. Some older or budget phones allow only 4,096 or 8,192. RAW files are still decoded at full resolution first and scaled once.
 - **Not here yet:** rotate and straighten, on-screen undo buttons for touch devices, and saving edits between sessions.
 - **Browser requirements:** WebGL 2 and WebAssembly. RAW decoding additionally needs a cross-origin-isolated page.

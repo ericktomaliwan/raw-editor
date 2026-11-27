@@ -95,7 +95,7 @@ function InlineActions({
       <HeaderButton
         disabled={!edited}
         onClick={onReset}
-        title="Reset all edits, including the crop"
+        title="Reset all edits, including the crop and layers"
       >
         Reset
       </HeaderButton>

@@ -17,11 +17,20 @@ const FORM_FIELDS = new Set(["INPUT", "TEXTAREA", "SELECT"]);
 interface Shortcuts {
   /** The crop tool is open, so Enter and Escape apply to it. */
   cropping: boolean;
+  /** A layer is selected, so Escape, Delete and O apply to it. */
+  layerSelected: boolean;
+  /** The brush is on, so [ and ] change its size. */
+  brushActive: boolean;
   onToggleCompare: () => void;
   onUndo: () => void;
   onRedo: () => void;
   onFinishCrop: () => void;
   onCancelCrop: () => void;
+  /** Escape with a layer selected: stop picking a colour, or else deselect it. */
+  onEscapeLayer: () => void;
+  onDeleteLayer: () => void;
+  onToggleMask: () => void;
+  onBrushSize: (up: boolean) => void;
 }
 
 /**
@@ -29,6 +38,9 @@ interface Shortcuts {
  * - Undo: Cmd+Z / Ctrl+Z. Redo: Cmd+Shift+Z / Ctrl+Shift+Z, or Ctrl+Y.
  * - "\" switches between the original and the edit.
  * - While cropping: Enter finishes, Escape puts the crop back as it was.
+ * - With a layer selected: Escape goes back to the global adjustments,
+ *   Delete / Backspace deletes the layer, O shows or hides its mask, and while
+ *   the brush is on [ and ] make it smaller or larger.
  *
  * Handlers may change every render; the listener always calls the latest ones.
  */
@@ -46,6 +58,18 @@ export function useEditorShortcuts(shortcuts: Shortcuts) {
       // (On a button or link, Enter belongs to that control.)
       e.preventDefault();
       shortcuts.onFinishCrop();
+    } else if (!shortcuts.layerSelected || e.metaKey || e.ctrlKey || e.altKey) {
+      return;
+    } else if (e.key === "Escape") {
+      shortcuts.onEscapeLayer();
+    } else if (e.key === "Delete" || e.key === "Backspace") {
+      e.preventDefault();
+      shortcuts.onDeleteLayer();
+    } else if (e.key === "o" || e.key === "O") {
+      shortcuts.onToggleMask();
+    } else if (shortcuts.brushActive && (e.key === "[" || e.key === "]")) {
+      e.preventDefault();
+      shortcuts.onBrushSize(e.key === "]");
     }
   });
 
